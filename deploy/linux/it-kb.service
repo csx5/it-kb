@@ -1,0 +1,19 @@
+[Unit]
+Description=IT-Wissensdatenbank (it-kb)
+After=network.target
+
+[Service]
+Type=simple
+User=itkb
+Group=itkb
+WorkingDirectory=/var/lib/it-kb
+ExecStart=/usr/local/bin/it-kb serve --config /etc/it-kb/config.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/it-kb
+
+[Install]
+WantedBy=multi-user.target

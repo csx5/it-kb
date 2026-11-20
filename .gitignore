@@ -1,0 +1,25 @@
+# Build-Artefakte & Binaries
+/it-kb
+/it-kb.exe
+/bin/
+/dist/
+*.exe
+*.out
+*.test
+
+# Laufzeitdaten & lokale Konfiguration
+/data/
+/backups/
+config.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.env.local
+
+# OS & Editoren
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

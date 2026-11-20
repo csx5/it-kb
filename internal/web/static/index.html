@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IT-Wissensdatenbank</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <a href="/" id="site-title" class="brand-title">IT-Wissensdatenbank</a>
+        <span id="app-version" class="badge badge-muted">dev</span>
+      </div>
+      <div class="topbar-actions">
+        <label class="author-box" title="Wird lokal im Browser gespeichert">
+          <span>Autor:</span>
+          <input type="text" id="author-input" placeholder="Kürzel (z. B. MK)" maxlength="32">
+        </label>
+        <button type="button" id="theme-toggle" class="btn btn-secondary">Theme wechseln</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="search-panel">
+      <div class="search-row">
+        <input
+          type="search"
+          id="search-input"
+          class="search-input"
+          placeholder="Suche nach Fehlercode (z. B. 0x8004010F), Symptom, System oder Synonym (z. B. o365, pw, druker) …"
+          autocomplete="off"
+          autofocus
+        >
+        <span class="shortcut-hint" title="Fokus auf Suche">/</span>
+      </div>
+      <div class="filter-row">
+        <select id="filter-category" aria-label="Kategorie filtern">
+          <option value="">Alle Kategorien</option>
+        </select>
+        <select id="filter-status" aria-label="Status filtern">
+          <option value="">Alle Status</option>
+          <option value="active">Aktiv</option>
+          <option value="draft">Entwurf</option>
+          <option value="outdated">Veraltet</option>
+        </select>
+        <select id="filter-template" aria-label="Vorlage filtern">
+          <option value="">Alle Vorlagen</option>
+          <option value="problem_solution">Problem &amp; Lösung</option>
+          <option value="howto">Anleitung / How-To</option>
+        </select>
+        <label class="checkbox-inline">
+          <input type="checkbox" id="filter-needs-review">
+          <span>Prüfung fällig</span>
+        </label>
+        <span id="result-meta" class="result-meta"></span>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div id="results-list" class="results-list" aria-live="polite"></div>
+      <article id="article-detail" class="article-detail hidden"></article>
+    </section>
+  </main>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
