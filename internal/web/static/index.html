@@ -14,6 +14,7 @@
         <span id="app-version" class="badge badge-muted">dev</span>
       </div>
       <div class="topbar-actions">
+        <button type="button" id="btn-new-article" class="btn btn-primary">Neuer Artikel</button>
         <label class="author-box" title="Wird lokal im Browser gespeichert">
           <span>Autor:</span>
           <input type="text" id="author-input" placeholder="Kürzel (z. B. MK)" maxlength="32">
@@ -24,7 +25,7 @@
   </header>
 
   <main class="container">
-    <section class="search-panel">
+    <section id="search-panel" class="search-panel">
       <div class="search-row">
         <input
           type="search"
@@ -55,15 +56,131 @@
           <input type="checkbox" id="filter-needs-review">
           <span>Prüfung fällig</span>
         </label>
+        <label class="checkbox-inline">
+          <input type="checkbox" id="filter-deleted">
+          <span>Papierkorb</span>
+        </label>
         <span id="result-meta" class="result-meta"></span>
       </div>
     </section>
 
     <section class="workspace">
       <div id="results-list" class="results-list" aria-live="polite"></div>
+
       <article id="article-detail" class="article-detail hidden"></article>
+
+      <section id="article-editor" class="editor-panel hidden">
+        <div class="editor-header">
+          <h2 id="editor-heading">Neuer Artikel</h2>
+          <div class="editor-header-actions">
+            <div class="segmented" role="group" aria-label="Editor-Ansicht">
+              <button type="button" class="seg-btn" data-view="write">Schreiben</button>
+              <button type="button" class="seg-btn active" data-view="split">Split</button>
+              <button type="button" class="seg-btn" data-view="preview">Vorschau</button>
+            </div>
+            <button type="button" id="btn-editor-cancel" class="btn">Abbrechen</button>
+            <button type="button" id="btn-editor-save" class="btn btn-primary">Speichern</button>
+          </div>
+        </div>
+
+        <div id="editor-lock-banner" class="banner banner-warn hidden"></div>
+
+        <form id="editor-form" class="editor-form">
+          <div class="form-grid">
+            <label class="field field-wide">
+              <span>Titel *</span>
+              <input type="text" id="ed-title" required placeholder="Kurze, eindeutige Beschreibung des Problems oder Themas">
+            </label>
+
+            <label class="field">
+              <span>Vorlage</span>
+              <select id="ed-template">
+                <option value="problem_solution">Problem &amp; Lösung</option>
+                <option value="howto">Allgemeine Anleitung / How-To</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Kategorie / System</span>
+              <select id="ed-category">
+                <option value="">Ohne Kategorie</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Status</span>
+              <select id="ed-status">
+                <option value="active">Aktiv</option>
+                <option value="draft">Entwurf</option>
+                <option value="outdated">Veraltet</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Tags (kommagetrennt)</span>
+              <input type="text" id="ed-tags" placeholder="z. B. outlook, ost, exchange">
+            </label>
+
+            <label class="field field-wide" id="ed-error-codes-wrap">
+              <span>Fehlercode / Fehlermeldung (höchste Suchgewichtung)</span>
+              <input type="text" id="ed-error-codes" placeholder="z. B. 0x8004010F, Event-ID 4740, DNS_PROBE_FINISHED_NXDOMAIN">
+            </label>
+          </div>
+
+          <div class="md-toolbar" role="toolbar" aria-label="Markdown-Formatierung">
+            <button type="button" class="tool-btn" data-md="h3">Überschrift</button>
+            <button type="button" class="tool-btn" data-md="bold">Fett</button>
+            <button type="button" class="tool-btn" data-md="code">Inline-Code</button>
+            <button type="button" class="tool-btn" data-md="codeblock">Code-Block</button>
+            <button type="button" class="tool-btn" data-md="list">Liste</button>
+            <button type="button" class="tool-btn" data-md="checklist">Checkliste</button>
+            <span class="toolbar-hint">Markdown unterstützt – Strg+S speichert</span>
+          </div>
+
+          <div id="editor-panes" class="editor-panes view-split">
+            <div class="editor-write-pane">
+              <label class="field" id="ed-symptoms-wrap">
+                <span>Symptome / Ursache (Markdown)</span>
+                <textarea id="ed-symptoms" rows="5" placeholder="Wann tritt der Fehler auf? Welche Meldungen oder Logs sind sichtbar?"></textarea>
+              </label>
+
+              <label class="field">
+                <span id="ed-solution-label">Schritt-für-Schritt-Lösung (Markdown)</span>
+                <textarea id="ed-solution" rows="13" placeholder="1. Schritt eins&#10;2. Schritt zwei&#10;&#10;```powershell&#10;# Befehl hier&#10;```"></textarea>
+              </label>
+            </div>
+
+            <div class="editor-preview-pane">
+              <div class="preview-title">Live-Vorschau</div>
+              <div id="ed-preview-content" class="preview-content"></div>
+            </div>
+          </div>
+
+          <div class="editor-footer">
+            <label class="field field-grow" id="ed-summary-wrap">
+              <span>Änderungskommentar (optional, für die Versionshistorie)</span>
+              <input type="text" id="ed-summary" placeholder="Was wurde angepasst oder ergänzt?">
+            </label>
+          </div>
+        </form>
+      </section>
     </section>
   </main>
+
+  <dialog id="conflict-dialog" class="modal-dialog">
+    <div class="modal-box">
+      <h3>Speicherkonflikt erkannt</h3>
+      <p id="conflict-intro" class="modal-desc"></p>
+      <div id="conflict-diff" class="conflict-diff"></div>
+      <div class="modal-actions">
+        <button type="button" id="btn-conflict-cancel" class="btn">Zurück zum Editor</button>
+        <button type="button" id="btn-conflict-take-server" class="btn">Server-Stand übernehmen</button>
+        <button type="button" id="btn-conflict-force" class="btn btn-danger">Meinen Stand trotzdem speichern</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script type="module" src="/js/app.js"></script>
 </body>

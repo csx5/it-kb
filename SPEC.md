@@ -22,7 +22,7 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
 
 ## 2. Umsetzungsstatus (Checkliste)
 
-### Fertig (Grundstruktur & lauffähiger Kern)
+### Fertig (Phase 1 & Phase 2 – Grundstruktur, Artikel-CRUD, Editor & Konflikte)
 - [x] Projektlayout, `Makefile`, `.gitignore`, `LICENSE`, `config.example.json`, `README.md`
 - [x] Konfigurationssystem (`internal/config`: Flags + Env + JSON + Defaults)
 - [x] Domain-Modelle (`internal/model`)
@@ -33,13 +33,13 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
 - [x] In-Memory Soft-Lock Manager (`internal/web/locks.go`)
 - [x] HTTP/TLS-Server, Security-Header/CSP, Admin-Middleware, `embed.FS`, Read/Search-API (`internal/web/server.go`)
 - [x] CLI-Entrypoint inkl. Windows-Service-Integration (`cmd/it-kb`) & Deployment-Dateien (`deploy/`)
-- [x] Basis-Web-UI mit Dark/Light-Theme, Autoren-Kürzel, Instant-Search & Filter-Ansicht (`internal/web/static/`)
+- [x] **Phase 2 – Artikel-CRUD, Editor & Konflikte:**
+  - [x] REST-Endpunkte `POST /api/articles`, `PUT /api/articles/{id}`, `DELETE /api/articles/{id}` (Soft-Delete), `POST /api/articles/{id}/restore`, `POST /api/articles/{id}/verify`, `DELETE /api/articles/{id}/permanent` (Admin-geschützt), `POST /api/preview`
+  - [x] Optimistic Locking (`409 Conflict` inkl. Server-Snapshot) + Soft-Lock-Heartbeat (`POST`/`DELETE /api/articles/{id}/lock`)
+  - [x] Frontend: Detailansicht mit Copy-Button & Aktionen, Papierkorb-Ansicht, Vorlagen-Editor (*Problem & Lösung* / *How-To*) mit Markdown-Toolbar & Split-Vorschau, Konfliktdialog mit Feldvergleich & Soft-Lock-Banner
+  - [x] Unit- und HTTP-Integrationstests (`internal/db/articles_test.go`, `internal/web/server_test.go`)
 
 ### Nächste Ausbaustufen (für die nächsten Sessions)
-- [ ] **Phase 2 – Artikel-CRUD, Editor & Konflikte:**
-  - REST-Endpunkte `POST /api/articles`, `PUT /api/articles/{id}`, `DELETE /api/articles/{id}` (Soft-Delete), `POST /api/articles/{id}/restore`, `POST /api/articles/{id}/verify`, `DELETE /api/articles/{id}/permanent`
-  - Optimistic-Locking-Konfliktantwort (`409 Conflict` inkl. Server-Snapshot) + Heartbeat-Endpunkt (`POST /api/articles/{id}/lock`)
-  - Frontend: Detailansicht mit Copy-Button an Code-Blöcken, Vorlagen-Editor (*Problem & Lösung* / *How-To*) mit Split-Preview, Konfliktdialog mit Diff & Soft-Lock-Banner
 - [ ] **Phase 3 – Screenshot-Bildeditor & Medien-Upload:**
   - `POST /api/media` (Upload mit Whitelist, SHA256, Größenlimit) & `GET /media/{id}` (Streaming mit korrekten Sicherheits-Headern)
   - Vollständiger Canvas-Editor in `editor-canvas.js` (Rahmen, Pfeil, Schwärzen, Verpixeln, Zuschneiden, Undo/Redo, `Enter`-Schnellpfad, WebP/PNG-Komprimierung)
