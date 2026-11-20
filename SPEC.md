@@ -51,10 +51,13 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] Verwaltungs-UI für Kategorien, Synonym-Gruppen (sofort in Suche aktiv), Seitentitel, Prüf-Intervall, Medien-Bereinigung und Papierkorb leeren
   - [x] Integrationstest (`internal/web/admin_test.go`)
 
-### Nächste Ausbaustufen (für die nächsten Sessions)
-- [ ] **Phase 5 – Backup, Portabler Export & Restore:**
-  - Portabler Markdown-ZIP-Export (`.md` + YAML-Frontmatter + `media/` + JSON)
-  - Konsistentes Voll-Backup-ZIP (`VACUUM INTO` + `media/`), UI-Restore & CLI `it-kb backup`
-- [ ] **Phase 6 – Tests & Release-Feinschliff:**
-  - Unit-Tests für Tokenizer/BM25/Fuzzy/Synonyme, Optimistic Locking, Whitelist/Path-Traversal und Export/Backup
-  - Cross-Compile-Check Linux & Windows
+- [x] **Phase 5 – Backup, Portabler Export & Restore:**
+  - [x] Portabler Markdown-ZIP-Export (`GET /api/export/markdown`): `.md`-Dateien mit YAML-Frontmatter, umgeschriebenen relativen Medien-Links (`../media/...`), `categories.json`, `synonyms.json` und `README.txt`
+  - [x] Konsistentes Voll-Backup-ZIP (`GET /api/backup/full` via `VACUUM INTO` + `media/`), UI-Restore (`POST /api/backup/restore` mit Zip-Slip- & SQLite-Header-Prüfung, Windows-sicherem `ReplaceFromFile` und sofortigem Suchindex-Rebuild) sowie CLI `it-kb backup`
+- [x] **Phase 6 – Tests & Release-Feinschliff:**
+  - [x] Unit- & Integrationstests für Tokenizer/BM25/Fuzzy/Synonyme, Artikel-CRUD/Optimistic Locking, Markdown-XSS/Video-Sanitizer, Medien-Whitelist/Attachment-Header/Orphan-Cleanup, Revisionen/Diff/Restore sowie Backup/Export/Zip-Slip
+  - [x] Cross-Compile-Verifikation Linux (`amd64`/`arm64`) & Windows (`amd64`)
+
+### Optionale Weiterentwicklung (Version 2)
+- [ ] Benutzerkonten & Rollen (RBAC: `admin`, `editor`, `reader`) auf Basis der bereits im Schema angelegten Tabellen `users` und `sessions`
+- [ ] Passwort-Login & Sitzungsverwaltung (optional aktivierbar per Config)

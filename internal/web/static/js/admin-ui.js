@@ -226,6 +226,9 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   const btnCheckOrphans = document.getElementById("btn-check-orphans");
   const btnCleanOrphans = document.getElementById("btn-clean-orphans");
   const btnEmptyTrash = document.getElementById("btn-empty-trash");
+  const btnBackupFull = document.getElementById("btn-backup-full");
+  const btnRestoreBackup = document.getElementById("btn-restore-backup");
+  const restoreBackupInput = document.getElementById("restore-backup-input");
 
   function adminHeaders() {
     const pw = (adminPwInput.value || "").trim();
@@ -432,6 +435,65 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       return;
     }
     showToast(`Papierkorb geleert (${res.body.deleted} Artikel entfernt)`);
+  });
+
+  btnBackupFull.addEventListener("click", async (e) => {
+    e.preventDefault();
+    try {
+      showToast("Voll-Backup wird erstellt …");
+      const res = await fetch("/api/backup/full", { headers: adminHeaders() });
+      if (!res.ok) {
+        let msg = `Backup fehlgeschlagen (HTTP ${res.status})`;
+        try {
+          const j = await res.json();
+          if (j?.error) msg = j.error;
+        } catch {}
+        showToast(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      a.download = `it-kb-vollbackup-${stamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast("Voll-Backup heruntergeladen");
+    } catch {
+      showToast("Voll-Backup fehlgeschlagen");
+    }
+  });
+
+  btnRestoreBackup.addEventListener("click", () => restoreBackupInput.click());
+  restoreBackupInput.addEventListener("change", async () => {
+    const file = restoreBackupInput.files?.[0];
+    restoreBackupInput.value = "";
+    if (!file) return;
+    if (!confirm(`Voll-Backup „${file.name}“ wirklich einspielen? Der aktuelle Datenbank- und Medienstand wird vollständig ersetzt.`)) {
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    showToast("Backup wird wiederhergestellt …");
+    const res = await fetch("/api/backup/restore", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: fd,
+    });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {}
+    if (!res.ok) {
+      showToast(body?.error || `Restore fehlgeschlagen (HTTP ${res.status})`);
+      return;
+    }
+    await reloadMeta();
+    await refreshAdminView();
+    showToast("Voll-Backup erfolgreich wiederhergestellt");
   });
 
   // Tab-Umschaltung im Verwaltungs-Panel

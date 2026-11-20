@@ -90,6 +90,9 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("DELETE /api/synonyms/{id}", s.handleDeleteSynonym)
 	s.mux.HandleFunc("PUT /api/settings", s.RequireAdmin(s.handleUpdateSettings))
 	s.mux.HandleFunc("DELETE /api/trash", s.RequireAdmin(s.handleEmptyTrash))
+	s.mux.HandleFunc("GET /api/export/markdown", s.handleExportMarkdown)
+	s.mux.HandleFunc("GET /api/backup/full", s.RequireAdmin(s.handleFullBackupDownload))
+	s.mux.HandleFunc("POST /api/backup/restore", s.RequireAdmin(s.handleFullBackupRestore))
 
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {

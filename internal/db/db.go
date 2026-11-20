@@ -20,7 +20,8 @@ import (
 var migrationsFS embed.FS
 
 type Store struct {
-	sqlDB *sql.DB
+	dbPath string
+	sqlDB  *sql.DB
 }
 
 func Open(dbPath string) (*Store, error) {
@@ -28,6 +29,20 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("datenverzeichnis anlegen: %w", err)
 	}
 
+	sqlDB, err := openSQLite(dbPath)
+	if err != nil {
+		return nil, err
+	}
+
+	store := &Store{dbPath: dbPath, sqlDB: sqlDB}
+	if err := store.migrate(); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func openSQLite(dbPath string) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_pragma=synchronous(NORMAL)", dbPath)
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -40,13 +55,33 @@ func Open(dbPath string) (*Store, error) {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("sqlite ping: %w", err)
 	}
+	return sqlDB, nil
+}
 
-	store := &Store{sqlDB: sqlDB}
-	if err := store.migrate(); err != nil {
-		_ = sqlDB.Close()
-		return nil, err
+// ReplaceFromFile schließt die laufende SQLite-Verbindung (wichtig u. a. für Windows),
+// ersetzt die Datenbankdatei durch einen validierten Snapshot und öffnet sie neu.
+func (s *Store) ReplaceFromFile(snapshotPath string) error {
+	if s.sqlDB != nil {
+		_ = s.sqlDB.Close()
+		s.sqlDB = nil
 	}
-	return store, nil
+	_ = os.Remove(s.dbPath + "-wal")
+	_ = os.Remove(s.dbPath + "-shm")
+
+	raw, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		return fmt.Errorf("snapshot lesen: %w", err)
+	}
+	if err := os.WriteFile(s.dbPath, raw, 0o640); err != nil {
+		return fmt.Errorf("datenbankdatei überschreiben: %w", err)
+	}
+
+	sqlDB, err := openSQLite(s.dbPath)
+	if err != nil {
+		return err
+	}
+	s.sqlDB = sqlDB
+	return s.migrate()
 }
 
 func (s *Store) Close() error {
