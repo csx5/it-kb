@@ -134,7 +134,9 @@
             <button type="button" class="tool-btn" data-md="codeblock">Code-Block</button>
             <button type="button" class="tool-btn" data-md="list">Liste</button>
             <button type="button" class="tool-btn" data-md="checklist">Checkliste</button>
-            <span class="toolbar-hint">Markdown unterstützt – Strg+S speichert</span>
+            <button type="button" class="tool-btn" id="btn-upload-media">Bild / Datei einfügen</button>
+            <input type="file" id="media-file-input" class="hidden" multiple>
+            <span class="toolbar-hint">Strg+V für Screenshot-Editor | Drag-and-Drop für Dateien | Strg+S speichert</span>
           </div>
 
           <div id="editor-panes" class="editor-panes view-split">
@@ -177,6 +179,59 @@
         <button type="button" id="btn-conflict-take-server" class="btn">Server-Stand übernehmen</button>
         <button type="button" id="btn-conflict-force" class="btn btn-danger">Meinen Stand trotzdem speichern</button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="image-editor-dialog" class="modal-dialog modal-wide">
+    <div class="modal-box">
+      <div class="img-ed-header">
+        <h3>Screenshot bearbeiten oder direkt einfügen</h3>
+        <span id="img-ed-info" class="badge"></span>
+      </div>
+
+      <div class="img-ed-toolbar">
+        <div class="img-ed-group">
+          <button type="button" class="tool-btn active" data-img-tool="redact">Schwärzen</button>
+          <button type="button" class="tool-btn" data-img-tool="pixelate">Verpixeln</button>
+          <button type="button" class="tool-btn" data-img-tool="rect">Rahmen</button>
+          <button type="button" class="tool-btn" data-img-tool="arrow">Pfeil</button>
+          <button type="button" class="tool-btn" data-img-tool="crop">Zuschneiden</button>
+        </div>
+
+        <div class="img-ed-group" title="Farbe für Rahmen und Pfeil">
+          <button type="button" class="color-dot active" data-img-color="#ef4444" style="background:#ef4444" aria-label="Rot"></button>
+          <button type="button" class="color-dot" data-img-color="#facc15" style="background:#facc15" aria-label="Gelb"></button>
+          <button type="button" class="color-dot" data-img-color="#3b82f6" style="background:#3b82f6" aria-label="Blau"></button>
+        </div>
+
+        <div class="img-ed-group">
+          <button type="button" class="tool-btn" id="img-ed-undo" disabled>Rückgängig</button>
+          <button type="button" class="tool-btn" id="img-ed-redo" disabled>Wiederholen</button>
+          <button type="button" class="tool-btn" id="img-ed-reset">Original</button>
+        </div>
+      </div>
+
+      <div class="img-ed-stage">
+        <canvas id="img-ed-canvas"></canvas>
+      </div>
+
+      <div class="img-ed-footer">
+        <label class="field field-grow">
+          <span>Bezeichnung / Dateiname</span>
+          <input type="text" id="img-ed-alt" placeholder="z. B. outlook-fehlermeldung">
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="img-ed-cancel" class="btn">Abbrechen</button>
+          <button type="button" id="img-ed-confirm" class="btn btn-primary">Direkt einfügen (Enter)</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="lightbox-dialog" class="modal-dialog modal-lightbox">
+    <div class="lightbox-wrap">
+      <button type="button" id="lightbox-close" class="btn lightbox-close">Schließen (Esc)</button>
+      <img id="lightbox-img" alt="Screenshot-Vollbild">
     </div>
   </dialog>
 

@@ -1,5 +1,9 @@
+import { createImageEditorController } from "/js/editor-canvas.js";
+
 const THEME_KEY = "itkb_theme";
 const AUTHOR_KEY = "itkb_author";
+
+const imageEditor = createImageEditorController();
 
 const els = {
   siteTitle: document.getElementById("site-title"),
@@ -43,6 +47,11 @@ const els = {
   btnConflictCancel: document.getElementById("btn-conflict-cancel"),
   btnConflictTakeServer: document.getElementById("btn-conflict-take-server"),
   btnConflictForce: document.getElementById("btn-conflict-force"),
+  btnUploadMedia: document.getElementById("btn-upload-media"),
+  mediaFileInput: document.getElementById("media-file-input"),
+  lightboxDialog: document.getElementById("lightbox-dialog"),
+  lightboxImg: document.getElementById("lightbox-img"),
+  lightboxClose: document.getElementById("lightbox-close"),
   toast: document.getElementById("toast"),
 };
 
@@ -343,6 +352,112 @@ async function openArticle(id) {
   els.articleDetail.append(solLbl, solDiv);
 
   attachCodeCopyButtons(els.articleDetail);
+  attachImageLightbox(els.articleDetail);
+}
+
+function attachImageLightbox(container) {
+  for (const img of container.querySelectorAll("img")) {
+    img.addEventListener("click", () => {
+      els.lightboxImg.src = img.src;
+      els.lightboxImg.alt = img.alt || "Screenshot";
+      els.lightboxDialog.showModal();
+    });
+  }
+}
+
+async function uploadMediaBlob(blob, filename) {
+  const fd = new FormData();
+  fd.append("file", blob, filename);
+  fd.append("uploaded_by", getAuthor());
+
+  const res = await fetch("/api/media", { method: "POST", body: fd });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok || !body?.markdown) {
+    throw new Error(body?.error || `Upload fehlgeschlagen (HTTP ${res.status})`);
+  }
+  return body;
+}
+
+function insertAtCursor(textarea, snippet) {
+  const ta = textarea || state.lastFocusedTextarea || els.edSolution;
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? ta.value.length;
+  const prefix = start > 0 && ta.value[start - 1] !== "\n" ? "\n" : "";
+  const suffix = "\n";
+  ta.setRangeText(prefix + snippet + suffix, start, end, "end");
+  ta.focus();
+  schedulePreview();
+}
+
+async function handleImageWithEditor(fileOrBlob, suggestedName, targetTextarea) {
+  const edited = await imageEditor.open(fileOrBlob, suggestedName);
+  if (!edited) return;
+  try {
+    showToast("Screenshot wird hochgeladen …");
+    const uploaded = await uploadMediaBlob(edited.blob, edited.filename);
+    insertAtCursor(targetTextarea, uploaded.markdown);
+    showToast("Screenshot eingefügt");
+  } catch (err) {
+    showToast(err.message || "Upload fehlgeschlagen");
+  }
+}
+
+async function handleFilesUpload(files, targetTextarea) {
+  const list = [...files];
+  if (list.length === 0) return;
+
+  // Einzelnes Bild direkt über den Screenshot-Editor führen (Schwärzen/Markieren + Komprimierung)
+  if (list.length === 1 && list[0].type.startsWith("image/")) {
+    await handleImageWithEditor(list[0], list[0].name || "screenshot", targetTextarea);
+    return;
+  }
+
+  for (const file of list) {
+    try {
+      showToast(`Lade hoch: ${file.name} …`);
+      const uploaded = await uploadMediaBlob(file, file.name);
+      insertAtCursor(targetTextarea, uploaded.markdown);
+    } catch (err) {
+      showToast(`${file.name}: ${err.message}`);
+    }
+  }
+  showToast("Upload abgeschlossen");
+}
+
+function bindMediaInputsToTextarea(ta) {
+  ta.addEventListener("paste", async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (blob) {
+          const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+          await handleImageWithEditor(blob, `screenshot-${stamp}`, ta);
+        }
+        return;
+      }
+    }
+  });
+
+  ta.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    ta.classList.add("drop-active");
+  });
+  ta.addEventListener("dragleave", () => ta.classList.remove("drop-active"));
+  ta.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    ta.classList.remove("drop-active");
+    if (e.dataTransfer?.files?.length) {
+      await handleFilesUpload(e.dataTransfer.files, ta);
+    }
+  });
 }
 
 async function verifyArticle(id) {
@@ -685,9 +800,25 @@ function bindEvents() {
     });
   }
 
-  for (const btn of document.querySelectorAll(".tool-btn")) {
+  for (const btn of document.querySelectorAll(".tool-btn[data-md]")) {
     btn.addEventListener("click", () => applyMarkdownAction(btn.dataset.md));
   }
+
+  bindMediaInputsToTextarea(els.edSymptoms);
+  bindMediaInputsToTextarea(els.edSolution);
+
+  els.btnUploadMedia.addEventListener("click", () => els.mediaFileInput.click());
+  els.mediaFileInput.addEventListener("change", async () => {
+    if (els.mediaFileInput.files?.length) {
+      await handleFilesUpload(els.mediaFileInput.files, state.lastFocusedTextarea || els.edSolution);
+      els.mediaFileInput.value = "";
+    }
+  });
+
+  els.lightboxClose.addEventListener("click", () => els.lightboxDialog.close());
+  els.lightboxDialog.addEventListener("click", (e) => {
+    if (e.target === els.lightboxDialog) els.lightboxDialog.close();
+  });
 
   // Konfliktdialog
   els.btnConflictCancel.addEventListener("click", () => els.conflictDialog.close());

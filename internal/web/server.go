@@ -74,6 +74,10 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("DELETE /api/articles/{id}/permanent", s.RequireAdmin(s.handlePermanentDeleteArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/lock", s.handleHeartbeatLock)
 	s.mux.HandleFunc("DELETE /api/articles/{id}/lock", s.handleReleaseLock)
+	s.mux.HandleFunc("POST /api/media", s.handleUploadMedia)
+	s.mux.HandleFunc("GET /media/{id}", s.handleServeMedia)
+	s.mux.HandleFunc("GET /api/media/orphans", s.RequireAdmin(s.handleListOrphanMedia))
+	s.mux.HandleFunc("POST /api/media/cleanup", s.RequireAdmin(s.handleCleanupOrphanMedia))
 	s.mux.HandleFunc("GET /api/categories", s.handleListCategories)
 	s.mux.HandleFunc("GET /api/synonyms", s.handleListSynonyms)
 

@@ -2,6 +2,7 @@ package markdown
 
 import (
 	"bytes"
+	"regexp"
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
@@ -15,7 +16,10 @@ type Renderer struct {
 	policy *bluemonday.Policy
 }
 
+var localMediaURL = regexp.MustCompile(`^/media/[a-f0-9]{16,64}$`)
+
 func New() *Renderer {
+	// WithUnsafe erlaubt kontrolliertes HTML (z. B. <video>) vor dem strengen bluemonday-Sanitizer.
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -23,14 +27,16 @@ func New() *Renderer {
 		),
 		goldmark.WithRendererOptions(
 			html.WithHardWraps(),
+			html.WithUnsafe(),
 		),
 	)
 
 	p := bluemonday.UGCPolicy()
-	// Lokale Video-Tags (MP4/WebM) kontrolliert erlauben
+	// Lokale Video-Tags (MP4/WebM) kontrolliert erlauben, ausschließlich für lokale /media/-Pfade
 	p.AllowElements("video", "source")
 	p.AllowAttrs("controls", "preload").OnElements("video")
-	p.AllowAttrs("src", "type").OnElements("source", "video")
+	p.AllowAttrs("src").Matching(localMediaURL).OnElements("video", "source")
+	p.AllowAttrs("type").Matching(regexp.MustCompile(`^video/(mp4|webm)$`)).OnElements("source")
 	p.AllowAttrs("class").OnElements("code", "pre", "span")
 
 	return &Renderer{md: md, policy: p}

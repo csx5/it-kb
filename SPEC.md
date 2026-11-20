@@ -39,11 +39,14 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] Frontend: Detailansicht mit Copy-Button & Aktionen, Papierkorb-Ansicht, Vorlagen-Editor (*Problem & Lösung* / *How-To*) mit Markdown-Toolbar & Split-Vorschau, Konfliktdialog mit Feldvergleich & Soft-Lock-Banner
   - [x] Unit- und HTTP-Integrationstests (`internal/db/articles_test.go`, `internal/web/server_test.go`)
 
+- [x] **Phase 3 – Screenshot-Bildeditor & Medien-Upload:**
+  - [x] `POST /api/media` (Upload mit Whitelist, SHA256, Größenlimit) & `GET /media/{id}` (Streaming mit `Content-Disposition: attachment` für Anhänge und Range-Support für Videos)
+  - [x] `GET /api/media/orphans` & `POST /api/media/cleanup` (Admin-geschützt, revisionssicher)
+  - [x] Vollständiger HTML5-Canvas-Bildeditor in `editor-canvas.js` (Schwärzen, Verpixeln, Rahmen, Pfeil, Zuschneiden, Undo/Redo, Original, `Enter`-Schnellpfad, clientseitige WebP/PNG-Komprimierung)
+  - [x] `Strg+V`-Screenshot-Workflow, Datei-Button & Drag-and-Drop für Videos/IT-Anhänge + Vollbild-Lightbox in der Leseansicht
+  - [x] Tests (`internal/markdown/renderer_test.go`, `internal/web/media_test.go`)
+
 ### Nächste Ausbaustufen (für die nächsten Sessions)
-- [ ] **Phase 3 – Screenshot-Bildeditor & Medien-Upload:**
-  - `POST /api/media` (Upload mit Whitelist, SHA256, Größenlimit) & `GET /media/{id}` (Streaming mit korrekten Sicherheits-Headern)
-  - Vollständiger Canvas-Editor in `editor-canvas.js` (Rahmen, Pfeil, Schwärzen, Verpixeln, Zuschneiden, Undo/Redo, `Enter`-Schnellpfad, WebP/PNG-Komprimierung)
-  - Drag-and-Drop für Videos & IT-Anhänge + Orphan-Bereinigung im Admin-Bereich
 - [ ] **Phase 4 – Revisionen, Synonyme, Kategorien & Papierkorb-UI:**
   - Endpunkte & UI für Revisionsliste, Zeilen-Diff und 1-Klick-Restore
   - Einstellungs-UI für Kategorien, Synonym-Gruppen, Seitentitel, Prüf-Intervall und Papierkorb
