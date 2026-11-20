@@ -90,6 +90,12 @@ func (e *Engine) SetSynonyms(groups []model.SynonymGroup) {
 	e.setSynonymsLocked(groups)
 }
 
+func (e *Engine) SetReviewReminderDays(days int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.reviewReminderDays = days
+}
+
 func (e *Engine) setSynonymsLocked(groups []model.SynonymGroup) {
 	e.synonyms = make(map[string][]string)
 	e.multiWordSynonyms = nil

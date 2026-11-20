@@ -74,12 +74,22 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("DELETE /api/articles/{id}/permanent", s.RequireAdmin(s.handlePermanentDeleteArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/lock", s.handleHeartbeatLock)
 	s.mux.HandleFunc("DELETE /api/articles/{id}/lock", s.handleReleaseLock)
+	s.mux.HandleFunc("GET /api/articles/{id}/revisions", s.handleListRevisions)
+	s.mux.HandleFunc("POST /api/articles/{id}/revisions/{version}/restore", s.handleRestoreRevision)
 	s.mux.HandleFunc("POST /api/media", s.handleUploadMedia)
 	s.mux.HandleFunc("GET /media/{id}", s.handleServeMedia)
 	s.mux.HandleFunc("GET /api/media/orphans", s.RequireAdmin(s.handleListOrphanMedia))
 	s.mux.HandleFunc("POST /api/media/cleanup", s.RequireAdmin(s.handleCleanupOrphanMedia))
 	s.mux.HandleFunc("GET /api/categories", s.handleListCategories)
+	s.mux.HandleFunc("POST /api/categories", s.handleCreateCategory)
+	s.mux.HandleFunc("PUT /api/categories/{id}", s.handleUpdateCategory)
+	s.mux.HandleFunc("DELETE /api/categories/{id}", s.handleDeleteCategory)
 	s.mux.HandleFunc("GET /api/synonyms", s.handleListSynonyms)
+	s.mux.HandleFunc("POST /api/synonyms", s.handleCreateSynonym)
+	s.mux.HandleFunc("PUT /api/synonyms/{id}", s.handleUpdateSynonym)
+	s.mux.HandleFunc("DELETE /api/synonyms/{id}", s.handleDeleteSynonym)
+	s.mux.HandleFunc("PUT /api/settings", s.RequireAdmin(s.handleUpdateSettings))
+	s.mux.HandleFunc("DELETE /api/trash", s.RequireAdmin(s.handleEmptyTrash))
 
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -130,11 +140,22 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Kategorien konnten nicht geladen werden")
 		return
 	}
+	settings, _ := s.store.GetSettings(r.Context())
+	siteTitle := s.cfg.SiteTitle
+	if v := strings.TrimSpace(settings["site_title"]); v != "" {
+		siteTitle = v
+	}
+	reminderDays := s.cfg.ReviewReminderDays
+	if v := strings.TrimSpace(settings["review_reminder_days"]); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			reminderDays = n
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"site_title":           s.cfg.SiteTitle,
+		"site_title":           siteTitle,
 		"version":              s.version,
 		"admin_protected":      s.cfg.AdminPassword != "",
-		"review_reminder_days": s.cfg.ReviewReminderDays,
+		"review_reminder_days": reminderDays,
 		"categories":           cats,
 	})
 }

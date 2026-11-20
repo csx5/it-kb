@@ -124,7 +124,16 @@ func startServer(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("synonyme laden: %w", err)
 	}
 
-	engine := search.NewEngine(cfg.ReviewReminderDays)
+	reminderDays := cfg.ReviewReminderDays
+	if dbSettings, err := store.GetSettings(ctx); err == nil {
+		if v := dbSettings["review_reminder_days"]; v != "" {
+			if n, err := fmt.Sscanf(v, "%d", &reminderDays); err != nil || n != 1 {
+				reminderDays = cfg.ReviewReminderDays
+			}
+		}
+	}
+
+	engine := search.NewEngine(reminderDays)
 	engine.Rebuild(articles, synonyms)
 
 	srv, err := web.NewServer(cfg, store, engine, version)

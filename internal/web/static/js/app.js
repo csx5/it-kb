@@ -1,4 +1,5 @@
 import { createImageEditorController } from "/js/editor-canvas.js";
+import { createAdminAndHistoryController } from "/js/admin-ui.js";
 
 const THEME_KEY = "itkb_theme";
 const AUTHOR_KEY = "itkb_author";
@@ -9,6 +10,9 @@ const els = {
   siteTitle: document.getElementById("site-title"),
   appVersion: document.getElementById("app-version"),
   btnNewArticle: document.getElementById("btn-new-article"),
+  btnAdminView: document.getElementById("btn-admin-view"),
+  adminPanel: document.getElementById("admin-panel"),
+  btnAdminClose: document.getElementById("btn-admin-close"),
   authorInput: document.getElementById("author-input"),
   themeToggle: document.getElementById("theme-toggle"),
   searchPanel: document.getElementById("search-panel"),
@@ -116,7 +120,8 @@ function showView(viewName) {
   els.resultsList.classList.toggle("hidden", viewName !== "list");
   els.articleDetail.classList.toggle("hidden", viewName !== "detail");
   els.articleEditor.classList.toggle("hidden", viewName !== "editor");
-  els.searchPanel.classList.toggle("hidden", viewName === "editor");
+  els.adminPanel.classList.toggle("hidden", viewName !== "admin");
+  els.searchPanel.classList.toggle("hidden", viewName === "editor" || viewName === "admin");
 
   if (viewName !== "editor") {
     stopLockHeartbeat();
@@ -262,6 +267,12 @@ async function openArticle(id) {
   actions.className = "detail-actions";
 
   if (!a.deleted_at) {
+    const historyBtn = document.createElement("button");
+    historyBtn.type = "button";
+    historyBtn.className = "btn";
+    historyBtn.textContent = `Historie (v${a.version})`;
+    historyBtn.addEventListener("click", () => adminUI.openHistory(a.id));
+
     const verifyBtn = document.createElement("button");
     verifyBtn.type = "button";
     verifyBtn.className = "btn";
@@ -280,7 +291,7 @@ async function openArticle(id) {
     delBtn.textContent = "In Papierkorb";
     delBtn.addEventListener("click", () => softDeleteArticle(a.id));
 
-    actions.append(verifyBtn, editBtn, delBtn);
+    actions.append(historyBtn, verifyBtn, editBtn, delBtn);
   } else {
     const restoreBtn = document.createElement("button");
     restoreBtn.type = "button";
@@ -769,6 +780,14 @@ function bindEvents() {
   });
 
   els.btnNewArticle.addEventListener("click", () => openEditor(null));
+  els.btnAdminView.addEventListener("click", async () => {
+    showView("admin");
+    await adminUI.refreshAdminView();
+  });
+  els.btnAdminClose.addEventListener("click", () => {
+    showView("list");
+    runSearch();
+  });
   els.btnEditorCancel.addEventListener("click", () => {
     const backId = state.editingArticleId;
     stopLockHeartbeat();
@@ -865,6 +884,15 @@ function bindEvents() {
 
   window.addEventListener("beforeunload", () => stopLockHeartbeat());
 }
+
+const adminUI = createAdminAndHistoryController({
+  apiRequest,
+  getAuthor,
+  getMeta: () => state.meta,
+  reloadMeta: loadMeta,
+  onRestoredArticle: (id) => openArticle(id),
+  showToast,
+});
 
 async function boot() {
   initTheme();

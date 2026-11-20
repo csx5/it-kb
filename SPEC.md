@@ -46,10 +46,12 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] `Strg+V`-Screenshot-Workflow, Datei-Button & Drag-and-Drop für Videos/IT-Anhänge + Vollbild-Lightbox in der Leseansicht
   - [x] Tests (`internal/markdown/renderer_test.go`, `internal/web/media_test.go`)
 
+- [x] **Phase 4 – Revisionen, Synonyme, Kategorien & Papierkorb-UI:**
+  - [x] Endpunkte & UI für Revisionsliste, zeilenweisen LCS-Diff und 1-Klick-Restore (`GET /api/articles/{id}/revisions`, `POST .../restore`)
+  - [x] Verwaltungs-UI für Kategorien, Synonym-Gruppen (sofort in Suche aktiv), Seitentitel, Prüf-Intervall, Medien-Bereinigung und Papierkorb leeren
+  - [x] Integrationstest (`internal/web/admin_test.go`)
+
 ### Nächste Ausbaustufen (für die nächsten Sessions)
-- [ ] **Phase 4 – Revisionen, Synonyme, Kategorien & Papierkorb-UI:**
-  - Endpunkte & UI für Revisionsliste, Zeilen-Diff und 1-Klick-Restore
-  - Einstellungs-UI für Kategorien, Synonym-Gruppen, Seitentitel, Prüf-Intervall und Papierkorb
 - [ ] **Phase 5 – Backup, Portabler Export & Restore:**
   - Portabler Markdown-ZIP-Export (`.md` + YAML-Frontmatter + `media/` + JSON)
   - Konsistentes Voll-Backup-ZIP (`VACUUM INTO` + `media/`), UI-Restore & CLI `it-kb backup`

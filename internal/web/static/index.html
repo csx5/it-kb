@@ -15,6 +15,7 @@
       </div>
       <div class="topbar-actions">
         <button type="button" id="btn-new-article" class="btn btn-primary">Neuer Artikel</button>
+        <button type="button" id="btn-admin-view" class="btn">Verwaltung</button>
         <label class="author-box" title="Wird lokal im Browser gespeichert">
           <span>Autor:</span>
           <input type="text" id="author-input" placeholder="Kürzel (z. B. MK)" maxlength="32">
@@ -166,8 +167,111 @@
           </div>
         </form>
       </section>
+
+      <section id="admin-panel" class="editor-panel hidden">
+        <div class="editor-header">
+          <h2>Verwaltung &amp; Einstellungen</h2>
+          <div class="editor-header-actions">
+            <div class="segmented" role="tablist">
+              <button type="button" class="seg-btn active" data-admin-tab="synonyms">Synonyme</button>
+              <button type="button" class="seg-btn" data-admin-tab="categories">Kategorien</button>
+              <button type="button" class="seg-btn" data-admin-tab="maintenance">Wartung &amp; Backup</button>
+            </div>
+            <button type="button" id="btn-admin-close" class="btn">Zurück zur Suche</button>
+          </div>
+        </div>
+
+        <div id="admin-password-wrap" class="banner banner-warn hidden">
+          <label class="admin-pw-row">
+            <span>Admin-Passwort (für geschützte Aktionen wie Einstellungen, Bereinigung, Papierkorb &amp; Restore):</span>
+            <input type="password" id="admin-password-input" placeholder="Admin-Passwort eingeben">
+          </label>
+        </div>
+
+        <div id="admin-tab-synonyms" class="admin-tab-panel">
+          <p class="modal-desc">Synonym-Gruppen wirken sofort bidirektional in der Suche (inkl. Mehrwort-Begriffen wie <code>microsoft 365</code>).</p>
+          <div class="admin-row admin-add-row">
+            <input type="text" id="admin-syn-input" class="admin-row-input" placeholder="Neue Gruppe kommagetrennt, z. B.: vpn, tunnel, openvpn, wireguard">
+            <button type="button" id="admin-syn-add" class="btn btn-primary">Hinzufügen</button>
+          </div>
+          <div id="admin-syn-list" class="admin-list"></div>
+        </div>
+
+        <div id="admin-tab-categories" class="admin-tab-panel hidden">
+          <p class="modal-desc">Kategorien und Systeme für Artikel und Suchfilter. Beim Löschen einer Kategorie bleiben Artikel erhalten.</p>
+          <div class="admin-row admin-add-row">
+            <input type="text" id="admin-cat-name" placeholder="Kategoriename">
+            <input type="text" id="admin-cat-desc" class="admin-row-input" placeholder="Kurzbeschreibung">
+            <input type="number" id="admin-cat-order" class="admin-order-input" value="50" title="Sortierreihenfolge">
+            <button type="button" id="admin-cat-add" class="btn btn-primary">Anlegen</button>
+          </div>
+          <div id="admin-cat-list" class="admin-list"></div>
+        </div>
+
+        <div id="admin-tab-maintenance" class="admin-tab-panel hidden">
+          <div class="admin-card">
+            <h3>Allgemeine Einstellungen</h3>
+            <div class="form-grid">
+              <label class="field">
+                <span>Seitentitel</span>
+                <input type="text" id="admin-site-title" placeholder="IT-Wissensdatenbank">
+              </label>
+              <label class="field">
+                <span>Prüf-Erinnerung (Tage ohne Prüfung, 0 = deaktiviert)</span>
+                <input type="number" id="admin-reminder-days" min="0" max="3650" value="180">
+              </label>
+            </div>
+            <button type="button" id="admin-settings-save" class="btn btn-primary">Einstellungen speichern</button>
+          </div>
+
+          <div class="admin-card">
+            <h3>Medien-Bereinigung &amp; Papierkorb</h3>
+            <p class="modal-desc">Medien bleiben revisionssicher gespeichert. Die Bereinigung entfernt nur Dateien, die in keiner Revision mehr referenziert werden.</p>
+            <div class="detail-actions">
+              <button type="button" id="btn-check-orphans" class="btn">Verwaiste Dateien prüfen</button>
+              <button type="button" id="btn-clean-orphans" class="btn btn-danger" disabled>Verwaiste Dateien löschen</button>
+              <button type="button" id="btn-empty-trash" class="btn btn-danger">Papierkorb leeren</button>
+            </div>
+            <p id="admin-orphan-summary" class="hit-snippet"></p>
+          </div>
+
+          <div class="admin-card" id="admin-backup-card">
+            <h3>Backup &amp; Portabler Export</h3>
+            <p class="modal-desc">Portabler Markdown-Export (ohne Vendor-Lock-in) sowie konsistentes SQLite-Voll-Backup inkl. Medien und Restore.</p>
+            <div class="detail-actions" id="admin-backup-actions">
+              <a href="/api/export/markdown" id="btn-export-md" class="btn">Markdown-Export (ZIP)</a>
+              <a href="/api/backup/full" id="btn-backup-full" class="btn btn-primary">Voll-Backup herunterladen (ZIP)</a>
+              <button type="button" id="btn-restore-backup" class="btn btn-danger">Voll-Backup wiederherstellen</button>
+              <input type="file" id="restore-backup-input" accept=".zip" class="hidden">
+            </div>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
+
+  <dialog id="revisions-dialog" class="modal-dialog modal-wide">
+    <div class="modal-box">
+      <div class="img-ed-header">
+        <h3>Versionshistorie &amp; Vergleich</h3>
+        <button type="button" id="rev-close-btn" class="btn">Schließen</button>
+      </div>
+      <div class="rev-compare-bar">
+        <label class="field field-grow">
+          <span>Ältere / Basis-Version</span>
+          <select id="rev-sel-left"></select>
+        </label>
+        <label class="field field-grow">
+          <span>Vergleichs-Version</span>
+          <select id="rev-sel-right"></select>
+        </label>
+        <button type="button" id="rev-restore-btn" class="btn btn-primary">Version wiederherstellen</button>
+      </div>
+      <div id="rev-diff" class="conflict-diff"></div>
+      <div class="detail-section-label">Alle gespeicherten Revisionen</div>
+      <div id="rev-list" class="rev-list"></div>
+    </div>
+  </dialog>
 
   <dialog id="conflict-dialog" class="modal-dialog">
     <div class="modal-box">
