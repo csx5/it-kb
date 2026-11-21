@@ -42,7 +42,7 @@ func Default() Config {
 		MaxImageMB:         15,
 		MaxVideoMB:         100,
 		MaxAttachmentMB:    25,
-		SeedDemoArticles:   true,
+		SeedDemoArticles:   false,
 	}
 }
 

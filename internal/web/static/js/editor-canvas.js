@@ -93,7 +93,7 @@ export function createImageEditorController() {
   function updateButtons() {
     btnUndo.disabled = historyIdx <= 0;
     btnRedo.disabled = historyIdx >= history.length - 1;
-    btnConfirm.textContent = historyIdx === 0 ? "Direkt einfügen (Enter)" : "Bearbeitet einfügen (Enter)";
+    btnConfirm.textContent = "Einfügen (Enter)";
   }
 
   function updateInfo() {

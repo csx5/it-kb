@@ -219,6 +219,10 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   const tabBtnUsers = document.getElementById("tab-btn-users");
   const tabBtnAudit = document.getElementById("tab-btn-audit");
   const tabBtnMaintenance = document.getElementById("tab-btn-maintenance");
+  const adminPanelTitle = document.getElementById("admin-panel-title");
+  const adminSettingsCard = document.getElementById("admin-settings-card");
+  const adminCleanupCard = document.getElementById("admin-cleanup-card");
+  const backupPwWrap = document.getElementById("backup-pw-wrap");
 
   const synList = document.getElementById("admin-syn-list");
   const synInput = document.getElementById("admin-syn-input");
@@ -270,9 +274,17 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     setDaysInput.value = String(meta.review_reminder_days ?? 180);
     adminPwWrap.classList.toggle("hidden", !meta.admin_protected);
 
+    adminPanelTitle.textContent = adminAllowed ? "Admin-Konsole" : "Verwaltung";
     tabBtnUsers.classList.toggle("hidden", !(authOn && adminAllowed));
     tabBtnAudit.classList.toggle("hidden", !(authOn && adminAllowed));
-    tabBtnMaintenance.classList.toggle("hidden", !adminAllowed && authOn);
+    tabBtnMaintenance.classList.remove("hidden");
+
+    // Im Editor-Modus unter Wartung & Backup nur den Markdown-Export zeigen
+    adminSettingsCard.classList.toggle("hidden", !adminAllowed && authOn);
+    adminCleanupCard.classList.toggle("hidden", !adminAllowed && authOn);
+    backupPwWrap.classList.toggle("hidden", !adminAllowed && authOn);
+    btnBackupFull.classList.toggle("hidden", !adminAllowed && authOn);
+    btnRestoreBackup.classList.toggle("hidden", !adminAllowed && authOn);
 
     if (authOn && adminAllowed) {
       activateAdminTab("users");
@@ -398,6 +410,13 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     }
   }
 
+  newUserPassword.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      btnCreateUser.click();
+    }
+  });
+
   btnCreateUser.addEventListener("click", async () => {
     const res = await apiRequest("/api/admin/users", {
       method: "POST",
@@ -487,6 +506,13 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       synList.appendChild(row);
     }
   }
+
+  synInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      synAddBtn.click();
+    }
+  });
 
   synAddBtn.addEventListener("click", async () => {
     const terms = synInput.value.split(",").map((s) => s.trim()).filter(Boolean);

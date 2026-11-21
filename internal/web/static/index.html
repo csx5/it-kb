@@ -11,7 +11,7 @@
     <div class="auth-card">
       <div class="auth-header">
         <h1 id="auth-site-title">IT-Wissensdatenbank</h1>
-        <p id="auth-subtitle" class="modal-desc">Bitte melden Sie sich an, um auf die Wissensdatenbank zuzugreifen.</p>
+        <p id="auth-subtitle" class="modal-desc">Anmeldung</p>
       </div>
 
       <form id="auth-login-form" class="auth-form hidden">
@@ -24,8 +24,8 @@
           <input type="password" id="login-password" autocomplete="current-password" required>
         </label>
         <label class="field hidden" id="login-totp-wrap">
-          <span>2FA-Code (6-stellig aus Authenticator-App)</span>
-          <input type="text" id="login-totp-code" inputmode="numeric" pattern="[0-9 ]*" maxlength="8" autocomplete="one-time-code" placeholder="123456">
+          <span>2FA-Code</span>
+          <input type="text" id="login-totp-code" inputmode="numeric" pattern="[0-9 ]*" maxlength="8" autocomplete="one-time-code" placeholder="6-stelliger Code">
         </label>
         <div id="login-error" class="banner banner-danger hidden"></div>
         <button type="submit" class="btn btn-primary btn-block">Anmelden</button>
@@ -33,15 +33,15 @@
 
       <form id="auth-setup-form" class="auth-form hidden">
         <label class="field">
-          <span>Administrator-Benutzername</span>
-          <input type="text" id="setup-username" placeholder="z. B. admin" autocomplete="username" required>
+          <span>Benutzername</span>
+          <input type="text" id="setup-username" autocomplete="username" required>
         </label>
         <label class="field">
           <span>Anzeigename</span>
-          <input type="text" id="setup-display-name" placeholder="z. B. Max Mustermann">
+          <input type="text" id="setup-display-name">
         </label>
         <label class="field">
-          <span>Passwort (mindestens 10 Zeichen)</span>
+          <span>Passwort (min. 10 Zeichen)</span>
           <input type="password" id="setup-password" autocomplete="new-password" minlength="10" required>
         </label>
         <label class="field">
@@ -49,453 +49,446 @@
           <input type="password" id="setup-password-confirm" autocomplete="new-password" minlength="10" required>
         </label>
         <div id="setup-error" class="banner banner-danger hidden"></div>
-        <button type="submit" class="btn btn-primary btn-block">Administrator anlegen &amp; starten</button>
+        <button type="submit" class="btn btn-primary btn-block">Administrator anlegen</button>
       </form>
     </div>
   </section>
 
-  <div id="app-shell">
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="brand">
-        <a href="/" id="site-title" class="brand-title">IT-Wissensdatenbank</a>
-        <span id="app-version" class="badge badge-muted">dev</span>
-      </div>
-      <div class="topbar-actions">
-        <button type="button" id="btn-new-article" class="btn btn-primary">Neuer Artikel</button>
-        <button type="button" id="btn-admin-view" class="btn">Admin-Konsole</button>
-        <label id="author-box-wrap" class="author-box" title="Wird lokal im Browser gespeichert">
-          <span>Autor:</span>
-          <input type="text" id="author-input" placeholder="Kürzel (z. B. MK)" maxlength="32">
-        </label>
-        <div id="user-menu" class="user-menu hidden">
-          <span id="user-badge" class="badge badge-user"></span>
-          <button type="button" id="btn-change-pw" class="btn btn-sm">Passwort</button>
-          <button type="button" id="btn-logout" class="btn btn-sm">Abmelden</button>
+  <div id="app-shell" class="hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <a href="/" id="site-title" class="brand-title">IT-Wissensdatenbank</a>
+          <span id="app-version" class="badge badge-muted">dev</span>
         </div>
-        <button type="button" id="theme-toggle" class="btn btn-secondary">Theme wechseln</button>
+        <div class="topbar-actions">
+          <button type="button" id="btn-new-article" class="btn btn-primary">Neuer Artikel</button>
+          <button type="button" id="btn-admin-view" class="btn">Admin-Konsole</button>
+          <label id="author-box-wrap" class="author-box">
+            <span>Autor:</span>
+            <input type="text" id="author-input" placeholder="Kürzel" maxlength="32">
+          </label>
+          <div id="user-menu" class="user-menu hidden">
+            <span id="user-badge" class="badge badge-user"></span>
+            <button type="button" id="btn-change-pw" class="btn btn-sm">Konto</button>
+            <button type="button" id="btn-logout" class="btn btn-sm">Abmelden</button>
+          </div>
+          <button type="button" id="theme-toggle" class="btn btn-secondary">Theme</button>
+        </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="container">
-    <section id="search-panel" class="search-panel">
-      <div class="search-row">
-        <input
-          type="search"
-          id="search-input"
-          class="search-input"
-          placeholder="Suche nach Fehlercode (z. B. 0x8004010F), Symptom, System oder Synonym (z. B. o365, pw, druker) …"
-          autocomplete="off"
-          autofocus
-        >
-        <span class="shortcut-hint" title="Fokus auf Suche">/</span>
-      </div>
-      <div class="filter-row">
-        <select id="filter-category" aria-label="Kategorie filtern">
-          <option value="">Alle Kategorien</option>
-        </select>
-        <select id="filter-status" aria-label="Status filtern">
-          <option value="">Alle Status</option>
-          <option value="active">Aktiv</option>
-          <option value="draft">Entwurf</option>
-          <option value="outdated">Veraltet</option>
-        </select>
-        <select id="filter-template" aria-label="Vorlage filtern">
-          <option value="">Alle Vorlagen</option>
-          <option value="problem_solution">Problem &amp; Lösung</option>
-          <option value="howto">Anleitung / How-To</option>
-        </select>
-        <label class="checkbox-inline">
-          <input type="checkbox" id="filter-needs-review">
-          <span>Prüfung fällig</span>
-        </label>
-        <label class="checkbox-inline">
-          <input type="checkbox" id="filter-deleted">
-          <span>Papierkorb</span>
-        </label>
-        <span id="result-meta" class="result-meta"></span>
-      </div>
-    </section>
+    <main class="container">
+      <section id="search-panel" class="search-panel">
+        <div class="search-row">
+          <input
+            type="search"
+            id="search-input"
+            class="search-input"
+            placeholder="Suchen …"
+            autocomplete="off"
+            autofocus
+          >
+          <span class="shortcut-hint" title="Suche fokussieren">/</span>
+        </div>
+        <div class="filter-row">
+          <select id="filter-category" aria-label="Kategorie filtern">
+            <option value="">Alle Kategorien</option>
+          </select>
+          <select id="filter-status" aria-label="Status filtern">
+            <option value="">Alle Status</option>
+            <option value="active">Aktiv</option>
+            <option value="draft">Entwurf</option>
+            <option value="outdated">Veraltet</option>
+          </select>
+          <select id="filter-template" aria-label="Vorlage filtern">
+            <option value="">Alle Vorlagen</option>
+            <option value="problem_solution">Problem &amp; Lösung</option>
+            <option value="howto">Anleitung / How-To</option>
+          </select>
+          <label class="checkbox-inline">
+            <input type="checkbox" id="filter-needs-review">
+            <span>Prüfung fällig</span>
+          </label>
+          <label class="checkbox-inline">
+            <input type="checkbox" id="filter-deleted">
+            <span>Papierkorb</span>
+          </label>
+          <span id="result-meta" class="result-meta"></span>
+        </div>
+      </section>
 
-    <section class="workspace">
-      <div id="results-list" class="results-list" aria-live="polite"></div>
+      <section class="workspace">
+        <div id="results-list" class="results-list" aria-live="polite"></div>
 
-      <article id="article-detail" class="article-detail hidden"></article>
+        <article id="article-detail" class="article-detail hidden"></article>
 
-      <section id="article-editor" class="editor-panel hidden">
-        <div class="editor-header">
-          <h2 id="editor-heading">Neuer Artikel</h2>
-          <div class="editor-header-actions">
-            <div class="segmented" role="group" aria-label="Editor-Ansicht">
-              <button type="button" class="seg-btn" data-view="write">Schreiben</button>
-              <button type="button" class="seg-btn active" data-view="split">Split</button>
-              <button type="button" class="seg-btn" data-view="preview">Vorschau</button>
+        <section id="article-editor" class="editor-panel hidden">
+          <div class="editor-header">
+            <h2 id="editor-heading">Neuer Artikel</h2>
+            <div class="editor-header-actions">
+              <div class="segmented" role="group" aria-label="Editor-Ansicht">
+                <button type="button" class="seg-btn" data-view="write">Schreiben</button>
+                <button type="button" class="seg-btn active" data-view="split">Split</button>
+                <button type="button" class="seg-btn" data-view="preview">Vorschau</button>
+              </div>
+              <button type="button" id="btn-editor-cancel" class="btn">Abbrechen</button>
+              <button type="button" id="btn-editor-save" class="btn btn-primary">Speichern</button>
             </div>
-            <button type="button" id="btn-editor-cancel" class="btn">Abbrechen</button>
-            <button type="button" id="btn-editor-save" class="btn btn-primary">Speichern</button>
-          </div>
-        </div>
-
-        <div id="editor-lock-banner" class="banner banner-warn hidden"></div>
-
-        <form id="editor-form" class="editor-form">
-          <div class="form-grid">
-            <label class="field field-wide">
-              <span>Titel *</span>
-              <input type="text" id="ed-title" required placeholder="Kurze, eindeutige Beschreibung des Problems oder Themas">
-            </label>
-
-            <label class="field">
-              <span>Vorlage</span>
-              <select id="ed-template">
-                <option value="problem_solution">Problem &amp; Lösung</option>
-                <option value="howto">Allgemeine Anleitung / How-To</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Kategorie / System</span>
-              <select id="ed-category">
-                <option value="">Ohne Kategorie</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Status</span>
-              <select id="ed-status">
-                <option value="active">Aktiv</option>
-                <option value="draft">Entwurf</option>
-                <option value="outdated">Veraltet</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Tags (kommagetrennt)</span>
-              <input type="text" id="ed-tags" placeholder="z. B. outlook, ost, exchange">
-            </label>
-
-            <label class="field field-wide" id="ed-error-codes-wrap">
-              <span>Fehlercode / Fehlermeldung (höchste Suchgewichtung)</span>
-              <input type="text" id="ed-error-codes" placeholder="z. B. 0x8004010F, Event-ID 4740, DNS_PROBE_FINISHED_NXDOMAIN">
-            </label>
           </div>
 
-          <div class="md-toolbar" role="toolbar" aria-label="Markdown-Formatierung">
-            <button type="button" class="tool-btn" data-md="h3">Überschrift</button>
-            <button type="button" class="tool-btn" data-md="bold">Fett</button>
-            <button type="button" class="tool-btn" data-md="code">Inline-Code</button>
-            <button type="button" class="tool-btn" data-md="codeblock">Code-Block</button>
-            <button type="button" class="tool-btn" data-md="list">Liste</button>
-            <button type="button" class="tool-btn" data-md="checklist">Checkliste</button>
-            <button type="button" class="tool-btn" id="btn-upload-media">Bild / Datei einfügen</button>
-            <input type="file" id="media-file-input" class="hidden" multiple>
-            <span class="toolbar-hint">Strg+V für Screenshot-Editor | Drag-and-Drop für Dateien | Strg+S speichert</span>
-          </div>
+          <div id="editor-lock-banner" class="banner banner-warn hidden"></div>
 
-          <div id="editor-panes" class="editor-panes view-split">
-            <div class="editor-write-pane">
-              <label class="field" id="ed-symptoms-wrap">
-                <span>Symptome / Ursache (Markdown)</span>
-                <textarea id="ed-symptoms" rows="5" placeholder="Wann tritt der Fehler auf? Welche Meldungen oder Logs sind sichtbar?"></textarea>
+          <form id="editor-form" class="editor-form">
+            <div class="form-grid">
+              <label class="field field-wide">
+                <span>Titel *</span>
+                <input type="text" id="ed-title" required>
               </label>
 
               <label class="field">
-                <span id="ed-solution-label">Schritt-für-Schritt-Lösung (Markdown)</span>
-                <textarea id="ed-solution" rows="13" placeholder="1. Schritt eins&#10;2. Schritt zwei&#10;&#10;```powershell&#10;# Befehl hier&#10;```"></textarea>
+                <span>Vorlage</span>
+                <select id="ed-template">
+                  <option value="problem_solution">Problem &amp; Lösung</option>
+                  <option value="howto">Anleitung / How-To</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Kategorie</span>
+                <select id="ed-category">
+                  <option value="">Ohne Kategorie</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Status</span>
+                <select id="ed-status">
+                  <option value="active">Aktiv</option>
+                  <option value="draft">Entwurf</option>
+                  <option value="outdated">Veraltet</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Tags</span>
+                <input type="text" id="ed-tags" placeholder="Kommagetrennt">
+              </label>
+
+              <label class="field field-wide" id="ed-error-codes-wrap">
+                <span>Fehlercode / Fehlermeldung</span>
+                <input type="text" id="ed-error-codes">
               </label>
             </div>
 
-            <div class="editor-preview-pane">
-              <div class="preview-title">Live-Vorschau</div>
-              <div id="ed-preview-content" class="preview-content"></div>
+            <div class="md-toolbar" role="toolbar" aria-label="Markdown-Formatierung">
+              <button type="button" class="tool-btn" data-md="h3">Überschrift</button>
+              <button type="button" class="tool-btn" data-md="bold">Fett</button>
+              <button type="button" class="tool-btn" data-md="code">Code</button>
+              <button type="button" class="tool-btn" data-md="codeblock">Code-Block</button>
+              <button type="button" class="tool-btn" data-md="list">Liste</button>
+              <button type="button" class="tool-btn" data-md="checklist">Checkliste</button>
+              <button type="button" class="tool-btn" id="btn-upload-media">Datei / Bild</button>
+              <input type="file" id="media-file-input" class="hidden" multiple>
+              <span class="toolbar-hint">Strg+V: Screenshot · Strg+S: Speichern</span>
+            </div>
+
+            <div id="editor-panes" class="editor-panes view-split">
+              <div class="editor-write-pane">
+                <label class="field" id="ed-symptoms-wrap">
+                  <span>Symptome / Ursache</span>
+                  <textarea id="ed-symptoms" rows="5"></textarea>
+                </label>
+
+                <label class="field">
+                  <span id="ed-solution-label">Lösung</span>
+                  <textarea id="ed-solution" rows="13"></textarea>
+                </label>
+              </div>
+
+              <div class="editor-preview-pane">
+                <div class="preview-title">Vorschau</div>
+                <div id="ed-preview-content" class="preview-content"></div>
+              </div>
+            </div>
+
+            <div class="editor-footer">
+              <label class="field field-grow" id="ed-summary-wrap">
+                <span>Änderungskommentar (optional)</span>
+                <input type="text" id="ed-summary">
+              </label>
+            </div>
+          </form>
+        </section>
+
+        <section id="admin-panel" class="editor-panel hidden">
+          <div class="editor-header">
+            <h2 id="admin-panel-title">Admin-Konsole</h2>
+            <div class="editor-header-actions">
+              <div class="segmented" role="tablist">
+                <button type="button" class="seg-btn active" data-admin-tab="users" id="tab-btn-users">Benutzer</button>
+                <button type="button" class="seg-btn" data-admin-tab="audit" id="tab-btn-audit">Sicherheits-Log</button>
+                <button type="button" class="seg-btn" data-admin-tab="synonyms" id="tab-btn-synonyms">Synonyme</button>
+                <button type="button" class="seg-btn" data-admin-tab="categories" id="tab-btn-categories">Kategorien</button>
+                <button type="button" class="seg-btn" data-admin-tab="maintenance" id="tab-btn-maintenance">Wartung &amp; Backup</button>
+              </div>
+              <button type="button" id="btn-admin-close" class="btn">Zurück</button>
             </div>
           </div>
 
-          <div class="editor-footer">
-            <label class="field field-grow" id="ed-summary-wrap">
-              <span>Änderungskommentar (optional, für die Versionshistorie)</span>
-              <input type="text" id="ed-summary" placeholder="Was wurde angepasst oder ergänzt?">
+          <div id="admin-password-wrap" class="banner banner-warn hidden">
+            <label class="admin-pw-row">
+              <span>Admin-Passwort:</span>
+              <input type="password" id="admin-password-input">
             </label>
+          </div>
+
+          <div id="admin-tab-users" class="admin-tab-panel">
+            <div class="admin-card">
+              <h3>Neuer Benutzer</h3>
+              <div class="admin-row">
+                <input type="text" id="new-user-name" placeholder="Benutzername">
+                <input type="text" id="new-user-display" placeholder="Anzeigename">
+                <select id="new-user-role">
+                  <option value="editor">Bearbeiter</option>
+                  <option value="reader">Leser</option>
+                  <option value="admin">Administrator</option>
+                </select>
+                <input type="password" id="new-user-password" placeholder="Passwort (min. 10 Zeichen)">
+                <button type="button" id="btn-create-user" class="btn btn-primary">Anlegen</button>
+              </div>
+            </div>
+            <div id="admin-users-list" class="admin-list"></div>
+          </div>
+
+          <div id="admin-tab-audit" class="admin-tab-panel hidden">
+            <div class="audit-header">
+              <span class="modal-desc">Letzte 200 Sicherheitsereignisse</span>
+              <button type="button" id="btn-refresh-audit" class="btn">Aktualisieren</button>
+            </div>
+            <div class="audit-table-wrap">
+              <table class="audit-table">
+                <thead>
+                  <tr>
+                    <th>Zeitpunkt</th>
+                    <th>Akteur</th>
+                    <th>Aktion</th>
+                    <th>Ziel</th>
+                    <th>IP</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-audit-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="admin-tab-synonyms" class="admin-tab-panel hidden">
+            <div class="admin-row admin-add-row">
+              <input type="text" id="admin-syn-input" class="admin-row-input" placeholder="Synonyme kommagetrennt">
+              <button type="button" id="admin-syn-add" class="btn btn-primary">Hinzufügen</button>
+            </div>
+            <div id="admin-syn-list" class="admin-list"></div>
+          </div>
+
+          <div id="admin-tab-categories" class="admin-tab-panel hidden">
+            <div class="admin-row admin-add-row">
+              <input type="text" id="admin-cat-name" placeholder="Name">
+              <input type="text" id="admin-cat-desc" class="admin-row-input" placeholder="Beschreibung">
+              <input type="number" id="admin-cat-order" class="admin-order-input" value="50" title="Reihenfolge">
+              <button type="button" id="admin-cat-add" class="btn btn-primary">Anlegen</button>
+            </div>
+            <div id="admin-cat-list" class="admin-list"></div>
+          </div>
+
+          <div id="admin-tab-maintenance" class="admin-tab-panel hidden">
+            <div class="admin-card" id="admin-settings-card">
+              <h3>Einstellungen</h3>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Seitentitel</span>
+                  <input type="text" id="admin-site-title">
+                </label>
+                <label class="field">
+                  <span>Prüf-Intervall in Tagen (0 = aus)</span>
+                  <input type="number" id="admin-reminder-days" min="0" max="3650" value="180">
+                </label>
+              </div>
+              <button type="button" id="admin-settings-save" class="btn btn-primary">Speichern</button>
+            </div>
+
+            <div class="admin-card" id="admin-cleanup-card">
+              <h3>Medien &amp; Papierkorb</h3>
+              <div class="detail-actions">
+                <button type="button" id="btn-check-orphans" class="btn">Verwaiste Dateien prüfen</button>
+                <button type="button" id="btn-clean-orphans" class="btn btn-danger" disabled>Verwaiste Dateien löschen</button>
+                <button type="button" id="btn-empty-trash" class="btn btn-danger">Papierkorb leeren</button>
+              </div>
+              <p id="admin-orphan-summary" class="hit-snippet"></p>
+            </div>
+
+            <div class="admin-card" id="admin-backup-card">
+              <h3>Export &amp; Backup</h3>
+              <label class="field backup-pw-field" id="backup-pw-wrap">
+                <span>Passphrase für verschlüsseltes Backup (optional, min. 8 Zeichen)</span>
+                <input type="password" id="backup-passphrase">
+              </label>
+              <div class="detail-actions" id="admin-backup-actions">
+                <a href="/api/export/markdown" id="btn-export-md" class="btn">Markdown-Export (ZIP)</a>
+                <a href="/api/backup/full" id="btn-backup-full" class="btn btn-primary">Voll-Backup</a>
+                <button type="button" id="btn-restore-backup" class="btn btn-danger">Backup wiederherstellen</button>
+                <input type="file" id="restore-backup-input" accept=".zip,.enc" class="hidden">
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="revisions-dialog" class="modal-dialog modal-wide">
+      <div class="modal-box">
+        <div class="img-ed-header">
+          <h3>Versionshistorie</h3>
+          <button type="button" id="rev-close-btn" class="btn">Schließen</button>
+        </div>
+        <div class="rev-compare-bar">
+          <label class="field field-grow">
+            <span>Basis-Version</span>
+            <select id="rev-sel-left"></select>
+          </label>
+          <label class="field field-grow">
+            <span>Vergleichs-Version</span>
+            <select id="rev-sel-right"></select>
+          </label>
+          <button type="button" id="rev-restore-btn" class="btn btn-primary">Wiederherstellen</button>
+        </div>
+        <div id="rev-diff" class="conflict-diff"></div>
+        <div class="detail-section-label">Revisionen</div>
+        <div id="rev-list" class="rev-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="conflict-dialog" class="modal-dialog">
+      <div class="modal-box">
+        <h3>Speicherkonflikt</h3>
+        <p id="conflict-intro" class="modal-desc"></p>
+        <div id="conflict-diff" class="conflict-diff"></div>
+        <div class="modal-actions">
+          <button type="button" id="btn-conflict-cancel" class="btn">Zurück</button>
+          <button type="button" id="btn-conflict-take-server" class="btn">Server-Stand übernehmen</button>
+          <button type="button" id="btn-conflict-force" class="btn btn-danger">Trotzdem speichern</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="image-editor-dialog" class="modal-dialog modal-wide">
+      <div class="modal-box">
+        <div class="img-ed-header">
+          <h3>Screenshot-Editor</h3>
+          <span id="img-ed-info" class="badge"></span>
+        </div>
+
+        <div class="img-ed-toolbar">
+          <div class="img-ed-group">
+            <button type="button" class="tool-btn active" data-img-tool="redact">Schwärzen</button>
+            <button type="button" class="tool-btn" data-img-tool="pixelate">Verpixeln</button>
+            <button type="button" class="tool-btn" data-img-tool="rect">Rahmen</button>
+            <button type="button" class="tool-btn" data-img-tool="arrow">Pfeil</button>
+            <button type="button" class="tool-btn" data-img-tool="crop">Zuschneiden</button>
+          </div>
+
+          <div class="img-ed-group" title="Farbe">
+            <button type="button" class="color-dot active" data-img-color="#ef4444" style="background:#ef4444" aria-label="Rot"></button>
+            <button type="button" class="color-dot" data-img-color="#facc15" style="background:#facc15" aria-label="Gelb"></button>
+            <button type="button" class="color-dot" data-img-color="#3b82f6" style="background:#3b82f6" aria-label="Blau"></button>
+          </div>
+
+          <div class="img-ed-group">
+            <button type="button" class="tool-btn" id="img-ed-undo" disabled>Rückgängig</button>
+            <button type="button" class="tool-btn" id="img-ed-redo" disabled>Wiederholen</button>
+            <button type="button" class="tool-btn" id="img-ed-reset">Original</button>
+          </div>
+        </div>
+
+        <div class="img-ed-stage">
+          <canvas id="img-ed-canvas"></canvas>
+        </div>
+
+        <div class="img-ed-footer">
+          <label class="field field-grow">
+            <span>Dateiname</span>
+            <input type="text" id="img-ed-alt">
+          </label>
+          <div class="modal-actions">
+            <button type="button" id="img-ed-cancel" class="btn">Abbrechen</button>
+            <button type="button" id="img-ed-confirm" class="btn btn-primary">Einfügen (Enter)</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="password-dialog" class="modal-dialog modal-narrow">
+      <div class="modal-box">
+        <h3>Konto &amp; Sicherheit</h3>
+        <form id="change-pw-form" class="auth-form">
+          <label class="field">
+            <span>Aktuelles Passwort</span>
+            <input type="password" id="pw-current" autocomplete="current-password" required>
+          </label>
+          <label class="field">
+            <span>Neues Passwort (min. 10 Zeichen)</span>
+            <input type="password" id="pw-new" autocomplete="new-password" minlength="10" required>
+          </label>
+          <label class="field">
+            <span>Passwort wiederholen</span>
+            <input type="password" id="pw-confirm" autocomplete="new-password" minlength="10" required>
+          </label>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary">Passwort ändern</button>
           </div>
         </form>
-      </section>
 
-      <section id="admin-panel" class="editor-panel hidden">
-        <div class="editor-header">
-          <h2>Admin-Konsole &amp; Verwaltung</h2>
-          <div class="editor-header-actions">
-            <div class="segmented" role="tablist">
-              <button type="button" class="seg-btn active" data-admin-tab="users" id="tab-btn-users">Benutzer</button>
-              <button type="button" class="seg-btn" data-admin-tab="audit" id="tab-btn-audit">Sicherheits-Log</button>
-              <button type="button" class="seg-btn" data-admin-tab="synonyms" id="tab-btn-synonyms">Synonyme</button>
-              <button type="button" class="seg-btn" data-admin-tab="categories" id="tab-btn-categories">Kategorien</button>
-              <button type="button" class="seg-btn" data-admin-tab="maintenance" id="tab-btn-maintenance">Wartung &amp; Backup</button>
+        <div class="totp-box">
+          <h4>Zwei-Faktor-Authentifizierung (TOTP)</h4>
+          <p id="totp-status-text" class="modal-desc"></p>
+          <div id="totp-setup-area" class="hidden">
+            <p class="modal-desc">Schlüssel in Authenticator-App eintragen:</p>
+            <div class="totp-secret-row">
+              <code id="totp-secret-code" class="badge badge-code"></code>
+              <button type="button" id="btn-totp-copy" class="btn btn-sm">Kopieren</button>
             </div>
-            <button type="button" id="btn-admin-close" class="btn">Zurück zur Suche</button>
-          </div>
-        </div>
-
-        <div id="admin-password-wrap" class="banner banner-warn hidden">
-          <label class="admin-pw-row">
-            <span>Admin-Passwort (nur im offenen Modus ohne Login):</span>
-            <input type="password" id="admin-password-input" placeholder="Admin-Passwort eingeben">
-          </label>
-        </div>
-
-        <div id="admin-tab-users" class="admin-tab-panel">
-          <p class="modal-desc">Benutzerkonten und Rollen (Administrator, Bearbeiter, Leser). Passwörter werden mit Argon2id gehasht; beim Sperren oder Zurücksetzen werden aktive Sitzungen sofort beendet.</p>
-          <div class="admin-card">
-            <h3>Neues Benutzerkonto anlegen</h3>
-            <div class="admin-row">
-              <input type="text" id="new-user-name" placeholder="Benutzername (z. B. m.muster)">
-              <input type="text" id="new-user-display" placeholder="Anzeigename (z. B. Max Mustermann)">
-              <select id="new-user-role">
-                <option value="editor">Bearbeiter</option>
-                <option value="reader">Leser</option>
-                <option value="admin">Administrator</option>
-              </select>
-              <input type="password" id="new-user-password" placeholder="Initialpasswort (min. 10 Zeichen)">
-              <button type="button" id="btn-create-user" class="btn btn-primary">Benutzer anlegen</button>
-            </div>
-          </div>
-          <div id="admin-users-list" class="admin-list"></div>
-        </div>
-
-        <div id="admin-tab-audit" class="admin-tab-panel hidden">
-          <div class="audit-header">
-            <p class="modal-desc">Protokoll der letzten 200 sicherheitsrelevanten Ereignisse (Anmeldungen, Fehlversuche, Benutzeränderungen, Backups, Löschvorgänge).</p>
-            <button type="button" id="btn-refresh-audit" class="btn">Aktualisieren</button>
-          </div>
-          <div class="audit-table-wrap">
-            <table class="audit-table">
-              <thead>
-                <tr>
-                  <th>Zeitpunkt</th>
-                  <th>Akteur</th>
-                  <th>Aktion</th>
-                  <th>Ziel</th>
-                  <th>IP</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody id="admin-audit-body"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div id="admin-tab-synonyms" class="admin-tab-panel hidden">
-          <p class="modal-desc">Synonym-Gruppen wirken sofort bidirektional in der Suche (inkl. Mehrwort-Begriffen wie <code>microsoft 365</code>).</p>
-          <div class="admin-row admin-add-row">
-            <input type="text" id="admin-syn-input" class="admin-row-input" placeholder="Neue Gruppe kommagetrennt, z. B.: vpn, tunnel, openvpn, wireguard">
-            <button type="button" id="admin-syn-add" class="btn btn-primary">Hinzufügen</button>
-          </div>
-          <div id="admin-syn-list" class="admin-list"></div>
-        </div>
-
-        <div id="admin-tab-categories" class="admin-tab-panel hidden">
-          <p class="modal-desc">Kategorien und Systeme für Artikel und Suchfilter. Beim Löschen einer Kategorie bleiben Artikel erhalten.</p>
-          <div class="admin-row admin-add-row">
-            <input type="text" id="admin-cat-name" placeholder="Kategoriename">
-            <input type="text" id="admin-cat-desc" class="admin-row-input" placeholder="Kurzbeschreibung">
-            <input type="number" id="admin-cat-order" class="admin-order-input" value="50" title="Sortierreihenfolge">
-            <button type="button" id="admin-cat-add" class="btn btn-primary">Anlegen</button>
-          </div>
-          <div id="admin-cat-list" class="admin-list"></div>
-        </div>
-
-        <div id="admin-tab-maintenance" class="admin-tab-panel hidden">
-          <div class="admin-card">
-            <h3>Allgemeine Einstellungen</h3>
-            <div class="form-grid">
-              <label class="field">
-                <span>Seitentitel</span>
-                <input type="text" id="admin-site-title" placeholder="IT-Wissensdatenbank">
-              </label>
-              <label class="field">
-                <span>Prüf-Erinnerung (Tage ohne Prüfung, 0 = deaktiviert)</span>
-                <input type="number" id="admin-reminder-days" min="0" max="3650" value="180">
-              </label>
-            </div>
-            <button type="button" id="admin-settings-save" class="btn btn-primary">Einstellungen speichern</button>
-          </div>
-
-          <div class="admin-card">
-            <h3>Medien-Bereinigung &amp; Papierkorb</h3>
-            <p class="modal-desc">Medien bleiben revisionssicher gespeichert. Die Bereinigung entfernt nur Dateien, die in keiner Revision mehr referenziert werden.</p>
-            <div class="detail-actions">
-              <button type="button" id="btn-check-orphans" class="btn">Verwaiste Dateien prüfen</button>
-              <button type="button" id="btn-clean-orphans" class="btn btn-danger" disabled>Verwaiste Dateien löschen</button>
-              <button type="button" id="btn-empty-trash" class="btn btn-danger">Papierkorb leeren</button>
-            </div>
-            <p id="admin-orphan-summary" class="hit-snippet"></p>
-          </div>
-
-          <div class="admin-card" id="admin-backup-card">
-            <h3>Backup &amp; Portabler Export</h3>
-            <p class="modal-desc">Portabler Markdown-Export (ohne Vendor-Lock-in) sowie konsistentes SQLite-Voll-Backup inkl. Medien. Mit optionaler Passphrase (ab 8 Zeichen) wird das Voll-Backup mit AES-256-GCM verschlüsselt (<code>.itkb.enc</code>).</p>
-            <label class="field backup-pw-field">
-              <span>Optionale Backup-Passphrase (AES-256-GCM für Voll-Backup &amp; Restore)</span>
-              <input type="password" id="backup-passphrase" placeholder="Leer lassen für unverschlüsseltes ZIP, oder min. 8 Zeichen">
+            <label class="field">
+              <span>6-stelliger Bestätigungscode</span>
+              <input type="text" id="totp-confirm-code" inputmode="numeric" maxlength="8">
             </label>
-            <div class="detail-actions" id="admin-backup-actions">
-              <a href="/api/export/markdown" id="btn-export-md" class="btn">Markdown-Export (ZIP)</a>
-              <a href="/api/backup/full" id="btn-backup-full" class="btn btn-primary">Voll-Backup herunterladen</a>
-              <button type="button" id="btn-restore-backup" class="btn btn-danger">Voll-Backup wiederherstellen</button>
-              <input type="file" id="restore-backup-input" accept=".zip,.enc" class="hidden">
-            </div>
+            <button type="button" id="btn-totp-confirm" class="btn btn-primary">2FA aktivieren</button>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="btn-totp-start" class="btn">2FA einrichten</button>
+            <button type="button" id="btn-totp-disable" class="btn btn-danger hidden">2FA deaktivieren</button>
+            <button type="button" id="btn-pw-cancel" class="btn">Schließen</button>
           </div>
         </div>
-      </section>
-    </section>
-  </main>
-
-  <dialog id="revisions-dialog" class="modal-dialog modal-wide">
-    <div class="modal-box">
-      <div class="img-ed-header">
-        <h3>Versionshistorie &amp; Vergleich</h3>
-        <button type="button" id="rev-close-btn" class="btn">Schließen</button>
       </div>
-      <div class="rev-compare-bar">
-        <label class="field field-grow">
-          <span>Ältere / Basis-Version</span>
-          <select id="rev-sel-left"></select>
-        </label>
-        <label class="field field-grow">
-          <span>Vergleichs-Version</span>
-          <select id="rev-sel-right"></select>
-        </label>
-        <button type="button" id="rev-restore-btn" class="btn btn-primary">Version wiederherstellen</button>
-      </div>
-      <div id="rev-diff" class="conflict-diff"></div>
-      <div class="detail-section-label">Alle gespeicherten Revisionen</div>
-      <div id="rev-list" class="rev-list"></div>
-    </div>
-  </dialog>
+    </dialog>
 
-  <dialog id="conflict-dialog" class="modal-dialog">
-    <div class="modal-box">
-      <h3>Speicherkonflikt erkannt</h3>
-      <p id="conflict-intro" class="modal-desc"></p>
-      <div id="conflict-diff" class="conflict-diff"></div>
-      <div class="modal-actions">
-        <button type="button" id="btn-conflict-cancel" class="btn">Zurück zum Editor</button>
-        <button type="button" id="btn-conflict-take-server" class="btn">Server-Stand übernehmen</button>
-        <button type="button" id="btn-conflict-force" class="btn btn-danger">Meinen Stand trotzdem speichern</button>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog id="image-editor-dialog" class="modal-dialog modal-wide">
-    <div class="modal-box">
-      <div class="img-ed-header">
-        <h3>Screenshot bearbeiten oder direkt einfügen</h3>
-        <span id="img-ed-info" class="badge"></span>
-      </div>
-
-      <div class="img-ed-toolbar">
-        <div class="img-ed-group">
-          <button type="button" class="tool-btn active" data-img-tool="redact">Schwärzen</button>
-          <button type="button" class="tool-btn" data-img-tool="pixelate">Verpixeln</button>
-          <button type="button" class="tool-btn" data-img-tool="rect">Rahmen</button>
-          <button type="button" class="tool-btn" data-img-tool="arrow">Pfeil</button>
-          <button type="button" class="tool-btn" data-img-tool="crop">Zuschneiden</button>
-        </div>
-
-        <div class="img-ed-group" title="Farbe für Rahmen und Pfeil">
-          <button type="button" class="color-dot active" data-img-color="#ef4444" style="background:#ef4444" aria-label="Rot"></button>
-          <button type="button" class="color-dot" data-img-color="#facc15" style="background:#facc15" aria-label="Gelb"></button>
-          <button type="button" class="color-dot" data-img-color="#3b82f6" style="background:#3b82f6" aria-label="Blau"></button>
-        </div>
-
-        <div class="img-ed-group">
-          <button type="button" class="tool-btn" id="img-ed-undo" disabled>Rückgängig</button>
-          <button type="button" class="tool-btn" id="img-ed-redo" disabled>Wiederholen</button>
-          <button type="button" class="tool-btn" id="img-ed-reset">Original</button>
-        </div>
-      </div>
-
-      <div class="img-ed-stage">
-        <canvas id="img-ed-canvas"></canvas>
-      </div>
-
-      <div class="img-ed-footer">
-        <label class="field field-grow">
-          <span>Bezeichnung / Dateiname</span>
-          <input type="text" id="img-ed-alt" placeholder="z. B. outlook-fehlermeldung">
-        </label>
+    <dialog id="pii-dialog" class="modal-dialog">
+      <div class="modal-box">
+        <h3>Mögliche sensible Daten gefunden</h3>
+        <div id="pii-findings-list" class="pii-list"></div>
         <div class="modal-actions">
-          <button type="button" id="img-ed-cancel" class="btn">Abbrechen</button>
-          <button type="button" id="img-ed-confirm" class="btn btn-primary">Direkt einfügen (Enter)</button>
+          <button type="button" id="btn-pii-cancel" class="btn btn-primary">Zurück zum Editor</button>
+          <button type="button" id="btn-pii-proceed" class="btn btn-danger">Trotzdem speichern</button>
         </div>
       </div>
-    </div>
-  </dialog>
+    </dialog>
 
-  <dialog id="password-dialog" class="modal-dialog modal-narrow">
-    <div class="modal-box">
-      <h3>Konto &amp; Sicherheit</h3>
-      <p class="modal-desc">Nach dem Passwortwechsel werden alle anderen offenen Sitzungen automatisch abgemeldet.</p>
-      <form id="change-pw-form" class="auth-form">
-        <label class="field">
-          <span>Aktuelles Passwort</span>
-          <input type="password" id="pw-current" autocomplete="current-password" required>
-        </label>
-        <label class="field">
-          <span>Neues Passwort (mindestens 10 Zeichen)</span>
-          <input type="password" id="pw-new" autocomplete="new-password" minlength="10" required>
-        </label>
-        <label class="field">
-          <span>Neues Passwort wiederholen</span>
-          <input type="password" id="pw-confirm" autocomplete="new-password" minlength="10" required>
-        </label>
-        <div class="modal-actions">
-          <button type="submit" class="btn btn-primary">Passwort speichern</button>
-        </div>
-      </form>
-
-      <div class="totp-box">
-        <h4>Zwei-Faktor-Authentifizierung (TOTP)</h4>
-        <p id="totp-status-text" class="modal-desc"></p>
-        <div id="totp-setup-area" class="hidden">
-          <p class="modal-desc">Schlüssel in Ihrer Authenticator-App (z. B. Aegis, Bitwarden, Microsoft/Google Authenticator) manuell eintragen:</p>
-          <div class="totp-secret-row">
-            <code id="totp-secret-code" class="badge badge-code"></code>
-            <button type="button" id="btn-totp-copy" class="btn btn-sm">Kopieren</button>
-          </div>
-          <label class="field">
-            <span>6-stelligen Bestätigungscode eingeben</span>
-            <input type="text" id="totp-confirm-code" inputmode="numeric" maxlength="8" placeholder="123456">
-          </label>
-          <button type="button" id="btn-totp-confirm" class="btn btn-primary">2FA aktivieren</button>
-        </div>
-        <div class="modal-actions">
-          <button type="button" id="btn-totp-start" class="btn">2FA einrichten</button>
-          <button type="button" id="btn-totp-disable" class="btn btn-danger hidden">2FA deaktivieren</button>
-          <button type="button" id="btn-pw-cancel" class="btn">Schließen</button>
-        </div>
+    <dialog id="lightbox-dialog" class="modal-dialog modal-lightbox">
+      <div class="lightbox-wrap">
+        <button type="button" id="lightbox-close" class="btn lightbox-close">Schließen</button>
+        <img id="lightbox-img" alt="Vollbild">
       </div>
-    </div>
-  </dialog>
-
-  <dialog id="pii-dialog" class="modal-dialog">
-    <div class="modal-box">
-      <h3>Hinweis: Mögliche sensible Daten erkannt</h3>
-      <p class="modal-desc">Die lokale Prüfung hat Muster gefunden, die auf Kundendaten, interne IPs oder Zugangsdaten hindeuten könnten. Bitte prüfen Sie die Stellen vor dem Speichern:</p>
-      <div id="pii-findings-list" class="pii-list"></div>
-      <div class="modal-actions">
-        <button type="button" id="btn-pii-cancel" class="btn btn-primary">Zurück zum Editor &amp; bereinigen</button>
-        <button type="button" id="btn-pii-proceed" class="btn btn-danger">Trotzdem speichern</button>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog id="lightbox-dialog" class="modal-dialog modal-lightbox">
-    <div class="lightbox-wrap">
-      <button type="button" id="lightbox-close" class="btn lightbox-close">Schließen (Esc)</button>
-      <img id="lightbox-img" alt="Screenshot-Vollbild">
-    </div>
-  </dialog>
+    </dialog>
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>

@@ -211,12 +211,12 @@ function showAuthScreen(needsSetup, siteTitle = "") {
   els.setupError.classList.add("hidden");
 
   if (needsSetup) {
-    els.authSubtitle.textContent = "Ersteinrichtung: Legen Sie jetzt das erste Administrator-Konto an.";
+    els.authSubtitle.textContent = "Ersteinrichtung: Administrator anlegen";
     els.authSetupForm.classList.remove("hidden");
     els.authLoginForm.classList.add("hidden");
     els.setupUsername.focus();
   } else {
-    els.authSubtitle.textContent = "Bitte melden Sie sich an, um auf die IT-Wissensdatenbank zuzugreifen.";
+    els.authSubtitle.textContent = "Anmeldung";
     els.authLoginForm.classList.remove("hidden");
     els.authSetupForm.classList.add("hidden");
     els.loginUsername.focus();
@@ -288,9 +288,13 @@ function renderResults(hits) {
   if (hits.length === 0) {
     const empty = document.createElement("p");
     empty.className = "hit-snippet";
-    empty.textContent = els.filterDeleted.checked
-      ? "Der Papierkorb ist leer."
-      : "Keine passenden Einträge gefunden.";
+    if (els.filterDeleted.checked) {
+      empty.textContent = "Der Papierkorb ist leer.";
+    } else if (!els.searchInput.value.trim() && !els.filterCategory.value && !els.filterStatus.value && !els.filterTemplate.value && !els.filterNeedsReview.checked) {
+      empty.textContent = "Noch keine Einträge vorhanden.";
+    } else {
+      empty.textContent = "Keine passenden Einträge gefunden.";
+    }
     els.resultsList.appendChild(empty);
     return;
   }
@@ -492,7 +496,9 @@ async function openArticle(id) {
     lbl.className = "detail-section-label";
     lbl.textContent = "Fehlercode / Fehlermeldung";
     const box = document.createElement("pre");
-    box.textContent = a.error_codes;
+    const code = document.createElement("code");
+    code.textContent = a.error_codes;
+    box.appendChild(code);
     els.articleDetail.append(lbl, box);
   }
 
@@ -637,7 +643,7 @@ function renderCommentsSection(articleId, comments) {
   form.className = "comments-form";
   const ta = document.createElement("textarea");
   ta.rows = 3;
-  ta.placeholder = "Kurzer Praxis-Hinweis (z. B. „Gilt auch unter Windows 11 24H2“ oder zusätzlicher Workaround) …";
+  ta.placeholder = "Hinweis schreiben …";
   const submit = document.createElement("button");
   submit.type = "submit";
   submit.className = "btn";
@@ -866,9 +872,7 @@ function openEditor(article = null) {
 function syncTemplateFields() {
   const isHowTo = els.edTemplate.value === "howto";
   els.edSymptomsWrap.classList.toggle("hidden", isHowTo);
-  els.edSolutionLabel.textContent = isHowTo
-    ? "Anleitung / Inhalt (Markdown)"
-    : "Schritt-für-Schritt-Lösung (Markdown)";
+  els.edSolutionLabel.textContent = isHowTo ? "Anleitung" : "Lösung";
 }
 
 function buildEditorPayload(force = false) {
@@ -942,7 +946,7 @@ async function saveEditor(force = false, skipPIICheck = false) {
 
 function openConflictDialog(serverArt, localPayload) {
   state.conflictServerArticle = serverArt;
-  els.conflictIntro.textContent = `Auf dem Server existiert bereits Version ${serverArt.version} (zuletzt geändert am ${new Date(serverArt.updated_at).toLocaleString("de-DE")}). Deine Eingaben sind nicht verloren.`;
+  els.conflictIntro.textContent = `Server-Stand: Version ${serverArt.version} (${new Date(serverArt.updated_at).toLocaleString("de-DE")}).`;
 
   const fields = [
     ["Titel", serverArt.title || "", localPayload.title || ""],
@@ -980,7 +984,7 @@ function startLockHeartbeat(articleId) {
       body: JSON.stringify({ editor: getAuthor() }),
     });
     if (ok && body?.is_other && body.lock?.editor) {
-      els.editorLockBanner.textContent = `Hinweis: ${body.lock.editor} bearbeitet diesen Artikel ebenfalls gerade. Beim gleichzeitigen Speichern greift die Konflikterkennung.`;
+      els.editorLockBanner.textContent = `Wird gerade von ${body.lock.editor} bearbeitet.`;
       els.editorLockBanner.classList.remove("hidden");
     } else {
       els.editorLockBanner.classList.add("hidden");
@@ -1063,14 +1067,14 @@ function applyMarkdownAction(action) {
 
 function attachCodeCopyButtons(container) {
   for (const pre of container.querySelectorAll("pre")) {
+    const code = pre.querySelector("code");
+    const rawText = code ? code.innerText : pre.innerText;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "code-copy-btn";
     btn.textContent = "Kopieren";
     btn.addEventListener("click", async () => {
-      const code = pre.querySelector("code");
-      const text = code ? code.innerText : pre.innerText;
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(rawText);
       btn.textContent = "Kopiert";
       setTimeout(() => (btn.textContent = "Kopieren"), 1500);
     });
@@ -1246,15 +1250,18 @@ function confirmPIIDialog(findings) {
 
 function updateTOTPDialogState() {
   const enabled = Boolean(state.user && state.user.totp_enabled);
-  els.totpStatusText.textContent = enabled
-    ? "2FA (TOTP) ist für Ihr Konto aktiv."
-    : "2FA ist derzeit nicht aktiviert. Empfohlen besonders für Administrator-Konten.";
+  els.totpStatusText.textContent = enabled ? "Status: Aktiv" : "Status: Nicht aktiviert";
   els.totpSetupArea.classList.add("hidden");
   els.btnTotpStart.classList.toggle("hidden", enabled);
   els.btnTotpDisable.classList.toggle("hidden", !enabled);
 }
 
 function bindAuthEvents() {
+  els.loginUsername.addEventListener("input", () => {
+    els.loginTotpWrap.classList.add("hidden");
+    els.loginTotpCode.value = "";
+  });
+
   els.authLoginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     els.loginError.classList.add("hidden");
