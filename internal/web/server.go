@@ -116,6 +116,7 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("DELETE /api/articles/{id}", s.requireAuth(model.RoleEditor, s.handleSoftDeleteArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/restore", s.requireAuth(model.RoleEditor, s.handleRestoreArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/verify", s.requireAuth(model.RoleEditor, s.handleVerifyArticle))
+	s.mux.HandleFunc("DELETE /api/articles/{id}/verify", s.requireAuth(model.RoleEditor, s.handleUnverifyArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/pin", s.requireAuth(model.RoleEditor, s.handlePinArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/lock", s.requireAuth(model.RoleEditor, s.handleHeartbeatLock))
 	s.mux.HandleFunc("DELETE /api/articles/{id}/lock", s.requireAuth(model.RoleEditor, s.handleReleaseLock))

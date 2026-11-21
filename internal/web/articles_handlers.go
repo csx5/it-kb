@@ -139,6 +139,27 @@ func (s *Server) handleVerifyArticle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"article": updated})
 }
 
+func (s *Server) handleUnverifyArticle(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Ungültige Artikel-ID")
+		return
+	}
+
+	updated, err := s.store.UnverifyArticle(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "Artikel nicht gefunden")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Prüfstatus konnte nicht entfernt werden")
+		return
+	}
+
+	s.engine.UpsertArticle(updated)
+	writeJSON(w, http.StatusOK, map[string]any{"article": updated})
+}
+
 func (s *Server) handleSoftDeleteArticle(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

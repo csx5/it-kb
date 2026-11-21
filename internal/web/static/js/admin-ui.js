@@ -547,10 +547,16 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       dInp.placeholder = "Beschreibung";
       dInp.className = "admin-row-input";
 
+      const oWrap = document.createElement("label");
+      oWrap.className = "checkbox-inline";
+      const oLbl = document.createElement("span");
+      oLbl.textContent = "Position:";
       const oInp = document.createElement("input");
       oInp.type = "number";
       oInp.value = String(c.sort_order ?? 0);
       oInp.className = "admin-order-input";
+      oInp.title = "Sortierreihenfolge (kleinere Zahl steht weiter oben)";
+      oWrap.append(oLbl, oInp);
 
       const saveBtn = document.createElement("button");
       saveBtn.type = "button";
@@ -584,7 +590,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
         }
       });
 
-      row.append(nInp, dInp, oInp, saveBtn, delBtn);
+      row.append(nInp, dInp, oWrap, saveBtn, delBtn);
       catList.appendChild(row);
     }
   }

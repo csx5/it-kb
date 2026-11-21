@@ -430,6 +430,17 @@ async function openArticle(id) {
       verifyBtn.textContent = "Als geprüft markieren";
       verifyBtn.addEventListener("click", () => verifyArticle(a.id));
 
+      actions.append(pinBtn, verifyBtn);
+
+      if (a.last_verified_at) {
+        const unverifyBtn = document.createElement("button");
+        unverifyBtn.type = "button";
+        unverifyBtn.className = "btn";
+        unverifyBtn.textContent = "Prüfung entfernen";
+        unverifyBtn.addEventListener("click", () => unverifyArticle(a.id));
+        actions.appendChild(unverifyBtn);
+      }
+
       const editBtn = document.createElement("button");
       editBtn.type = "button";
       editBtn.className = "btn btn-primary";
@@ -442,7 +453,7 @@ async function openArticle(id) {
       delBtn.textContent = "In Papierkorb";
       delBtn.addEventListener("click", () => softDeleteArticle(a.id));
 
-      actions.append(pinBtn, verifyBtn, editBtn, delBtn);
+      actions.append(editBtn, delBtn);
     }
   } else {
     if (canEdit()) {
@@ -798,6 +809,16 @@ async function verifyArticle(id) {
     return;
   }
   showToast("Artikel als geprüft markiert");
+  await openArticle(id);
+}
+
+async function unverifyArticle(id) {
+  const { ok } = await apiRequest(`/api/articles/${id}/verify`, { method: "DELETE" });
+  if (!ok) {
+    showToast("Prüfstatus konnte nicht entfernt werden");
+    return;
+  }
+  showToast("Prüfstatus entfernt");
   await openArticle(id);
 }
 

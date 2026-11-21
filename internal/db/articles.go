@@ -217,6 +217,22 @@ func (s *Store) VerifyArticle(ctx context.Context, id int64, verifier string) (m
 	return s.GetArticleByID(ctx, id)
 }
 
+func (s *Store) UnverifyArticle(ctx context.Context, id int64) (model.Article, error) {
+	res, err := s.sqlDB.ExecContext(ctx, `
+		UPDATE articles
+		SET last_verified_at = NULL, last_verified_by = ''
+		WHERE id = ? AND deleted_at IS NULL
+	`, id)
+	if err != nil {
+		return model.Article{}, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return model.Article{}, ErrNotFound
+	}
+	return s.GetArticleByID(ctx, id)
+}
+
 func (s *Store) SoftDeleteArticle(ctx context.Context, id int64) (model.Article, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.sqlDB.ExecContext(ctx, `

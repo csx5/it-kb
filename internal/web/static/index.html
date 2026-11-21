@@ -295,7 +295,10 @@
             <div class="admin-row admin-add-row">
               <input type="text" id="admin-cat-name" placeholder="Name">
               <input type="text" id="admin-cat-desc" class="admin-row-input" placeholder="Beschreibung">
-              <input type="number" id="admin-cat-order" class="admin-order-input" value="50" title="Reihenfolge">
+              <label class="checkbox-inline">
+                <span>Position:</span>
+                <input type="number" id="admin-cat-order" class="admin-order-input" value="50" title="Sortierreihenfolge (kleinere Zahl steht weiter oben)">
+              </label>
               <button type="button" id="admin-cat-add" class="btn btn-primary">Anlegen</button>
             </div>
             <div id="admin-cat-list" class="admin-list"></div>
