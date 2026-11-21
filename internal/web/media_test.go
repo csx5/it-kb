@@ -34,6 +34,7 @@ func TestMediaUploadWhitelistAttachmentHeadersAndOrphanCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server: %v", err)
 	}
+	srv.orphanMinAge = 0
 	h := srv.Handler()
 
 	// 1. Nicht erlaubte Datei (.exe) & als .webm getarntes HTML (XSS) müssen abgelehnt werden

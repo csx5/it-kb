@@ -126,6 +126,18 @@ func startServer(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("initialdaten anlegen: %w", err)
 	}
 	_ = store.CleanupExpiredSessions(ctx)
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = store.CleanupExpiredSessions(ctx)
+			}
+		}
+	}()
 
 	if cfg.BootstrapAdmin != "" && cfg.BootstrapPassword != "" {
 		if n, err := store.CountUsers(ctx); err == nil && n == 0 {
@@ -170,6 +182,7 @@ func startServer(ctx context.Context, cfg config.Config) error {
 		Addr:              cfg.Listen,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	certFile, keyFile := cfg.TLSCert, cfg.TLSKey
@@ -251,7 +264,13 @@ func runBackup(args []string) {
 		return
 	}
 
-	tmpZip := outPath + ".tmp.zip"
+	tmpFile, err := os.CreateTemp("", "it-kb-enc-src-*.zip")
+	if err != nil {
+		log.Fatalf("Temporäre Backup-Datei anlegen: %v", err)
+	}
+	tmpZip := tmpFile.Name()
+	_ = tmpFile.Close()
+	_ = os.Chmod(tmpZip, 0o600)
 	defer os.Remove(tmpZip)
 	if err := backup.CreateFullBackup(context.Background(), store, cfg.MediaDir(), tmpZip); err != nil {
 		log.Fatalf("Backup fehlgeschlagen: %v", err)

@@ -57,7 +57,7 @@ func (s *Store) ListArticleRevisions(ctx context.Context, articleID int64) ([]mo
 	return out, rows.Err()
 }
 
-func (s *Store) RestoreArticleRevision(ctx context.Context, articleID int64, targetVersion int, editorName string) (model.Article, error) {
+func (s *Store) RestoreArticleRevision(ctx context.Context, articleID int64, targetVersion int, editorName string, editorUserID *int64) (model.Article, error) {
 	var rev model.ArticleRevision
 	var catID sql.NullInt64
 	var tagsJSON string
@@ -93,6 +93,7 @@ func (s *Store) RestoreArticleRevision(ctx context.Context, articleID int64, tar
 		SolutionBody:  rev.SolutionBody,
 		Tags:          rev.Tags,
 		EditorName:    editorName,
+		EditorUserID:  editorUserID,
 		ChangeSummary: fmt.Sprintf("Wiederhergestellt aus Version %d", targetVersion),
 	})
 }
@@ -132,6 +133,9 @@ func (s *Store) UpdateCategory(ctx context.Context, id int64, name, description 
 		return model.Category{}, errors.New("kategoriename darf nicht leer sein")
 	}
 	slug := slugify(name)
+	if slug == "" {
+		slug = fmt.Sprintf("cat-%d", id)
+	}
 	res, err := s.sqlDB.ExecContext(ctx, `
 		UPDATE categories SET slug = ?, name = ?, description = ?, sort_order = ?
 		WHERE id = ?

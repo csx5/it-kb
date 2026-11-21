@@ -179,8 +179,14 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 	}
 
 	queryText := strings.TrimSpace(q.Text)
+	if qr := []rune(queryText); len(qr) > 512 {
+		queryText = string(qr[:512])
+	}
 	queryLow := strings.ToLower(queryText)
 	baseTerms := uniqueStrings(Tokenize(queryText))
+	if len(baseTerms) > 16 {
+		baseTerms = baseTerms[:16]
+	}
 
 	// Synonyme und Fuzzy-Terme mit Gewichtungen sammeln
 	termWeights := make(map[string]float64, len(baseTerms)*3)
@@ -219,9 +225,10 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 			}
 		}
 	}
-	// Trigramm / Damerau-Levenshtein Tippfehler-Toleranz
+	// Trigramm / Damerau-Levenshtein Tippfehler-Toleranz (längenbegrenzt gegen DoS)
 	for _, t := range baseTerms {
-		if len([]rune(t)) < 4 {
+		rLen := len([]rune(t))
+		if rLen < 4 || rLen > 48 {
 			continue
 		}
 		if _, exactVocab := e.df[t]; exactVocab {
@@ -418,14 +425,19 @@ func (e *Engine) fuzzyCandidatesLocked(term string) []string {
 		}
 	}
 
+	termLen := len([]rune(term))
 	maxDist := 1
-	if len([]rune(term)) >= 7 {
+	if termLen >= 7 {
 		maxDist = 2
 	}
 
 	var out []string
 	for cand, overlap := range counts {
 		if overlap < 2 {
+			continue
+		}
+		diff := termLen - len([]rune(cand))
+		if diff < -maxDist || diff > maxDist {
 			continue
 		}
 		if EditDistance(term, cand) <= maxDist {

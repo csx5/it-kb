@@ -595,7 +595,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       body: JSON.stringify({
         name: catName.value,
         description: catDesc.value,
-        sort_order: Number(catOrder.value) || 50,
+        sort_order: catOrder.value === "" ? 50 : Number(catOrder.value),
       }),
     });
     if (!res.ok) {
@@ -663,7 +663,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   btnBackupFull.addEventListener("click", async (e) => {
     e.preventDefault();
     try {
-      const pass = (backupPassphraseInput.value || "").trim();
+      const pass = backupPassphraseInput.value || "";
       const headers = adminHeaders();
       if (pass) {
         if (pass.length < 8) {
@@ -707,7 +707,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     if (!confirm(`Voll-Backup „${file.name}“ wirklich einspielen? Der aktuelle Datenbank- und Medienstand wird vollständig ersetzt.`)) {
       return;
     }
-    let pass = (backupPassphraseInput.value || "").trim();
+    let pass = backupPassphraseInput.value || "";
     if (!pass && file.name.endsWith(".enc")) {
       pass = prompt("Backup-Passphrase zum Entschlüsseln eingeben:") || "";
     }
@@ -728,9 +728,13 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       showToast(body?.error || `Restore fehlgeschlagen (HTTP ${res.status})`);
       return;
     }
-    await reloadMeta();
-    await refreshAdminView();
     showToast("Voll-Backup erfolgreich wiederhergestellt");
+    try {
+      await reloadMeta();
+      await refreshAdminView();
+    } catch {
+      // Falls das wiederhergestellte Backup andere Benutzer/Sessions enthält, führt 401 sauber zum Login
+    }
   });
 
   // Tab-Umschaltung im Verwaltungs-Panel

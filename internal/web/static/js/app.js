@@ -184,6 +184,7 @@ async function apiRequest(url, options = {}) {
     body = null;
   }
   if (res.status === 401 && state.authRequired && !url.startsWith("/api/auth/")) {
+    stopLockHeartbeat();
     state.user = null;
     showAuthScreen(false);
   }
@@ -716,7 +717,13 @@ function insertAtCursor(textarea, snippet) {
 }
 
 async function handleImageWithEditor(fileOrBlob, suggestedName, targetTextarea) {
-  const edited = await imageEditor.open(fileOrBlob, suggestedName);
+  let edited = null;
+  try {
+    edited = await imageEditor.open(fileOrBlob, suggestedName);
+  } catch {
+    showToast("Bild konnte nicht geladen werden");
+    return;
+  }
   if (!edited) return;
   try {
     showToast("Screenshot wird hochgeladen …");
@@ -861,6 +868,7 @@ function openEditor(article = null) {
   els.edSummaryWrap.classList.toggle("hidden", !article);
 
   syncTemplateFields();
+  state.lastFocusedTextarea = els.edSolution;
   showView("editor");
   els.edTitle.focus();
   refreshPreview();
@@ -874,6 +882,9 @@ function syncTemplateFields() {
   const isHowTo = els.edTemplate.value === "howto";
   els.edSymptomsWrap.classList.toggle("hidden", isHowTo);
   els.edSolutionLabel.textContent = isHowTo ? "Anleitung" : "Lösung";
+  if (isHowTo) {
+    state.lastFocusedTextarea = els.edSolution;
+  }
 }
 
 function buildEditorPayload(force = false) {
@@ -1223,7 +1234,11 @@ function bindEvents() {
       return;
     }
     if ((e.key === "/" || (e.ctrlKey && e.key.toLowerCase() === "k")) && document.activeElement !== els.searchInput) {
-      if (document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+      if (els.appShell.classList.contains("hidden")) return;
+      if (document.querySelector("dialog[open]")) return;
+      if (!els.articleEditor.classList.contains("hidden")) return;
+      const tag = document.activeElement?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT" && tag !== "OPTION" && tag !== "BUTTON") {
         e.preventDefault();
         showView("list");
         els.searchInput.focus();
@@ -1262,13 +1277,19 @@ function confirmPIIDialog(findings) {
     const cleanup = (val) => {
       els.btnPiiCancel.removeEventListener("click", onCancel);
       els.btnPiiProceed.removeEventListener("click", onProceed);
-      els.piiDialog.close();
+      els.piiDialog.removeEventListener("cancel", onDialogCancel);
+      if (els.piiDialog.open) els.piiDialog.close();
       resolve(val);
     };
     const onCancel = () => cleanup(false);
     const onProceed = () => cleanup(true);
+    const onDialogCancel = (e) => {
+      e.preventDefault();
+      cleanup(false);
+    };
     els.btnPiiCancel.addEventListener("click", onCancel);
     els.btnPiiProceed.addEventListener("click", onProceed);
+    els.piiDialog.addEventListener("cancel", onDialogCancel);
   });
 }
 
@@ -1354,11 +1375,24 @@ function bindAuthEvents() {
   });
 
   els.btnLogout.addEventListener("click", async () => {
-    stopLockHeartbeat();
+    await stopLockHeartbeat();
     await apiRequest("/api/auth/logout", { method: "POST" });
     state.user = null;
     els.resultsList.innerHTML = "";
     els.articleDetail.innerHTML = "";
+    els.searchInput.value = "";
+    els.edTitle.value = "";
+    els.edErrorCodes.value = "";
+    els.edSymptoms.value = "";
+    els.edSolution.value = "";
+    const bp = document.getElementById("backup-passphrase");
+    if (bp) bp.value = "";
+    const apw = document.getElementById("admin-password-input");
+    if (apw) apw.value = "";
+    const ul = document.getElementById("admin-users-list");
+    if (ul) ul.innerHTML = "";
+    const ab = document.getElementById("admin-audit-body");
+    if (ab) ab.innerHTML = "";
     showView("list");
     showAuthScreen(false, state.meta.site_title);
   });

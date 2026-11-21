@@ -138,22 +138,34 @@ func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
 }
 
 func (s *Store) UpdateUser(ctx context.Context, id int64, displayName, role string, isActive bool) (model.User, error) {
-	existing, err := s.GetUserByID(ctx, id)
-	if err != nil {
-		return model.User{}, err
-	}
-	displayName = strings.TrimSpace(displayName)
-	if displayName == "" {
-		displayName = existing.Username
-	}
 	if !isValidRole(role) {
 		return model.User{}, errors.New("ungültige rolle")
 	}
 
-	// Schutz vor Aussperrung: Letzter aktiver Admin darf nicht deaktiviert oder herabgestuft werden
-	if existing.Role == model.RoleAdmin && existing.IsActive && (role != model.RoleAdmin || !isActive) {
-		admins, err := s.CountActiveAdmins(ctx)
-		if err != nil {
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return model.User{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var username, curRole string
+	var curActiveInt int
+	err = tx.QueryRowContext(ctx, `SELECT username, role, is_active FROM users WHERE id = ?`, id).Scan(&username, &curRole, &curActiveInt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.User{}, ErrNotFound
+		}
+		return model.User{}, err
+	}
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = username
+	}
+
+	// Atomare Prüfung in Transaktion gegen TOCTOU: Letzter aktiver Admin darf nicht deaktiviert/herabgestuft werden
+	if curRole == model.RoleAdmin && curActiveInt == 1 && (role != model.RoleAdmin || !isActive) {
+		var admins int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1`).Scan(&admins); err != nil {
 			return model.User{}, err
 		}
 		if admins <= 1 {
@@ -165,17 +177,20 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, displayName, role stri
 	if isActive {
 		activeInt = 1
 	}
-	if _, err := s.sqlDB.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE users SET display_name = ?, role = ?, is_active = ? WHERE id = ?
 	`, displayName, role, activeInt, id); err != nil {
 		return model.User{}, err
 	}
-
-	// Bei Deaktivierung sofort alle offenen Sessions dieses Benutzers beenden
 	if !isActive {
-		_ = s.DeleteUserSessions(ctx, id)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
+			return model.User{}, err
+		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return model.User{}, err
+	}
 	updated, err := s.GetUserByID(ctx, id)
 	return updated.User, err
 }
@@ -196,21 +211,34 @@ func (s *Store) UpdateUserPassword(ctx context.Context, id int64, newPasswordHas
 }
 
 func (s *Store) DeleteUser(ctx context.Context, id int64) error {
-	existing, err := s.GetUserByID(ctx, id)
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if existing.Role == model.RoleAdmin && existing.IsActive {
-		admins, err := s.CountActiveAdmins(ctx)
-		if err != nil {
+	defer func() { _ = tx.Rollback() }()
+
+	var curRole string
+	var curActiveInt int
+	err = tx.QueryRowContext(ctx, `SELECT role, is_active FROM users WHERE id = ?`, id).Scan(&curRole, &curActiveInt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if curRole == model.RoleAdmin && curActiveInt == 1 {
+		var admins int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1`).Scan(&admins); err != nil {
 			return err
 		}
 		if admins <= 1 {
 			return ErrLastAdmin
 		}
 	}
-	_, err = s.sqlDB.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
-	return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- Sessions ---

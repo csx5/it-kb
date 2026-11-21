@@ -66,6 +66,7 @@ func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
 
 	// 3. Initiales Admin-Setup -> 201 + HttpOnly Session-Cookie
 	setupReq := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewBufferString(`{"username":"admin","display_name":"Chef Admin","password":"SuperSicherAdmin2026!"}`))
+	setupReq.Header.Set("X-Requested-With", "it-kb")
 	setupRec := httptest.NewRecorder()
 	h.ServeHTTP(setupRec, setupReq)
 	if setupRec.Code != http.StatusCreated {
@@ -77,8 +78,10 @@ func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
 	}
 
 	// Zweites Setup muss gesperrt sein (403)
+	setupReq2 := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewBufferString(`{"username":"hacker","password":"SuperSicherAdmin2026!"}`))
+	setupReq2.Header.Set("X-Requested-With", "it-kb")
 	setupRec2 := httptest.NewRecorder()
-	h.ServeHTTP(setupRec2, httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewBufferString(`{"username":"hacker","password":"SuperSicherAdmin2026!"}`)))
+	h.ServeHTTP(setupRec2, setupReq2)
 	if setupRec2.Code != http.StatusForbidden {
 		t.Fatalf("zweites setup hätte 403 liefern müssen, erhalten %d", setupRec2.Code)
 	}
@@ -139,6 +142,7 @@ func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
 	// 9. Brute-Force Rate-Limit testen (5 Fehlversuche -> 6. Versuch 429)
 	for i := 0; i < 5; i++ {
 		badReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"leser","password":"FalschPassword123"}`))
+		badReq.Header.Set("X-Requested-With", "it-kb")
 		badReq.RemoteAddr = "10.0.0.55:12345"
 		badRec := httptest.NewRecorder()
 		h.ServeHTTP(badRec, badReq)
@@ -147,6 +151,7 @@ func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
 		}
 	}
 	sixthReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"leser","password":"LeserPasswort2026!"}`))
+	sixthReq.Header.Set("X-Requested-With", "it-kb")
 	sixthReq.RemoteAddr = "10.0.0.55:12345"
 	sixthRec := httptest.NewRecorder()
 	h.ServeHTTP(sixthRec, sixthReq)
@@ -175,6 +180,7 @@ func extractSessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Co
 func loginAs(t *testing.T, h http.Handler, username, password string) *http.Cookie {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"`+username+`","password":"`+password+`"}`))
+	req.Header.Set("X-Requested-With", "it-kb")
 	req.RemoteAddr = "10.0.0.99:5555"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

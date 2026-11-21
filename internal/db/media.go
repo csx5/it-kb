@@ -37,9 +37,9 @@ func (s *Store) GetMediaFile(ctx context.Context, id string) (model.MediaFile, e
 	return m, nil
 }
 
-// ListOrphanedMediaFiles liefert alle Mediendateien, die weder in einem Artikel
+// ListOrphanedMediaFiles liefert alle Mediendateien älter als minAge, die weder in einem Artikel
 // noch in irgendeiner gespeicherten Revision referenziert werden.
-func (s *Store) ListOrphanedMediaFiles(ctx context.Context) ([]model.MediaFile, error) {
+func (s *Store) ListOrphanedMediaFiles(ctx context.Context, minAge time.Duration) ([]model.MediaFile, error) {
 	// Alle Inhalte aus Artikeln und Revisionen sammeln
 	var corpus strings.Builder
 	for _, query := range []string{
@@ -75,6 +75,7 @@ func (s *Store) ListOrphanedMediaFiles(ctx context.Context) ([]model.MediaFile, 
 	}
 	defer rows.Close()
 
+	cutoff := time.Now().UTC().Add(-minAge)
 	var orphans []model.MediaFile
 	for rows.Next() {
 		var m model.MediaFile
@@ -83,6 +84,9 @@ func (s *Store) ListOrphanedMediaFiles(ctx context.Context) ([]model.MediaFile, 
 			return nil, err
 		}
 		m.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
+		if minAge > 0 && m.CreatedAt.After(cutoff) {
+			continue
+		}
 		if !strings.Contains(allText, "/media/"+m.ID) {
 			orphans = append(orphans, m)
 		}

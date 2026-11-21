@@ -61,8 +61,10 @@ func TestTOTP2FAEncryptedBackupHelpfulPinCommentsAndRelated(t *testing.T) {
 	h := srv.Handler()
 
 	// 1. Admin einrichten
+	setupReq := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewBufferString(`{"username":"admin","display_name":"Admin","password":"SuperSicherAdmin2026!"}`))
+	setupReq.Header.Set("X-Requested-With", "it-kb")
 	setupRec := httptest.NewRecorder()
-	h.ServeHTTP(setupRec, httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewBufferString(`{"username":"admin","display_name":"Admin","password":"SuperSicherAdmin2026!"}`)))
+	h.ServeHTTP(setupRec, setupReq)
 	if setupRec.Code != http.StatusCreated {
 		t.Fatalf("setup: %d %s", setupRec.Code, setupRec.Body.String())
 	}
@@ -89,6 +91,7 @@ func TestTOTP2FAEncryptedBackupHelpfulPinCommentsAndRelated(t *testing.T) {
 
 	// Login ohne TOTP-Code muss totp_required melden (ohne Session-Cookie)
 	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!"}`))
+	loginReq.Header.Set("X-Requested-With", "it-kb")
 	loginReq.RemoteAddr = "10.0.0.10:1234"
 	loginRec := httptest.NewRecorder()
 	h.ServeHTTP(loginRec, loginReq)
@@ -102,15 +105,21 @@ func TestTOTP2FAEncryptedBackupHelpfulPinCommentsAndRelated(t *testing.T) {
 		t.Fatalf("totp/setup bei aktivem 2FA hätte 400 liefern müssen, erhalten %d", bypassRec.Code)
 	}
 
-	// Login mit gültigem TOTP-Code gelingt; sofortiger Replay desselben Codes muss abgelehnt werden
-	loginReq2 := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+code+`"}`))
+	// Login mit nächstem Zeitschritt-Code (+30s, da aktueller Schritt bei Enable bereits verbraucht wurde!)
+	nextCode, err := auth.GenerateTOTPCode(totpSetup.Secret, time.Now().UTC().Add(30*time.Second))
+	if err != nil {
+		t.Fatalf("next totp code: %v", err)
+	}
+	loginReq2 := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+nextCode+`"}`))
+	loginReq2.Header.Set("X-Requested-With", "it-kb")
 	loginReq2.RemoteAddr = "10.0.0.10:1234"
 	loginRec2 := httptest.NewRecorder()
 	h.ServeHTTP(loginRec2, loginReq2)
 	if loginRec2.Code != http.StatusOK {
 		t.Fatalf("totp login fehlgeschlagen: %d %s", loginRec2.Code, loginRec2.Body.String())
 	}
-	replayReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+code+`"}`))
+	replayReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+nextCode+`"}`))
+	replayReq.Header.Set("X-Requested-With", "it-kb")
 	replayReq.RemoteAddr = "10.0.0.10:1234"
 	replayRec := httptest.NewRecorder()
 	h.ServeHTTP(replayRec, replayReq)

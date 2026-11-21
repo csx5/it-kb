@@ -7,16 +7,16 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/csx5/it-kb/internal/backup"
+	"github.com/csx5/it-kb/internal/model"
 )
 
 func (s *Server) handleExportMarkdown(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	if err := backup.WritePortableMarkdownExport(r.Context(), s.store, s.cfg.MediaDir(), &buf); err != nil {
-		writeError(w, http.StatusInternalServerError, "Markdown-Export fehlgeschlagen: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "Markdown-Export fehlgeschlagen")
 		return
 	}
 
@@ -38,12 +38,12 @@ func (s *Server) handleFullBackupDownload(w http.ResponseWriter, r *http.Request
 
 	if err := backup.WriteFullBackup(r.Context(), s.store, s.cfg.MediaDir(), tmpFile); err != nil {
 		_ = tmpFile.Close()
-		writeError(w, http.StatusInternalServerError, "Voll-Backup fehlgeschlagen: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "Voll-Backup fehlgeschlagen")
 		return
 	}
 	_ = tmpFile.Close()
 
-	passphrase := strings.TrimSpace(r.Header.Get("X-Backup-Passphrase"))
+	passphrase := r.Header.Get("X-Backup-Passphrase")
 	if passphrase != "" {
 		plain, err := os.ReadFile(tmpPath)
 		if err != nil {
@@ -71,12 +71,34 @@ func (s *Server) handleFullBackupDownload(w http.ResponseWriter, r *http.Request
 	http.ServeFile(w, r, tmpPath)
 }
 
+// handleFullBackupRestoreEntry prüft Auth sicher unter restoreMu.RLock (schützt gegen Nil-DB-Race
+// bei parallelen Restore-Requests) und wechselt erst für den eigentlichen Restore auf restoreMu.Lock.
+func (s *Server) handleFullBackupRestoreEntry(w http.ResponseWriter, r *http.Request) {
+	var authedReq *http.Request
+	s.restoreMu.RLock()
+	s.requireAuth(model.RoleAdmin, func(_ http.ResponseWriter, req *http.Request) {
+		authedReq = req
+	})(w, r)
+	s.restoreMu.RUnlock()
+
+	if authedReq == nil {
+		return
+	}
+	s.handleFullBackupRestore(w, authedReq)
+}
+
 func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 512<<20) // bis 512 MB Upload
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "Backup-Datei konnte nicht gelesen werden")
 		return
 	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Feld 'file' fehlt im Restore-Upload")
@@ -84,19 +106,43 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 	}
 	defer file.Close()
 
-	raw, err := io.ReadAll(file)
+	// Zuerst in temporäre Datei (0600) streamen statt unnötiger Vollpufferung im RAM
+	tmpUpload, err := os.CreateTemp("", "it-kb-restore-in-*")
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Temporäre Datei fehlgeschlagen")
+		return
+	}
+	tmpUploadPath := tmpUpload.Name()
+	defer os.Remove(tmpUploadPath)
+	_ = os.Chmod(tmpUploadPath, 0o600)
+
+	size, err := io.Copy(tmpUpload, file)
+	if err != nil {
+		_ = tmpUpload.Close()
 		writeError(w, http.StatusBadRequest, "Backup-Upload unvollständig")
 		return
 	}
 
-	// Automatische Erkennung und Entschlüsselung bei AES-256-GCM Backups (.itkb.enc)
-	if backup.IsEncryptedBackup(raw) {
-		passphrase := strings.TrimSpace(r.FormValue("passphrase"))
-		if passphrase == "" {
-			passphrase = strings.TrimSpace(r.Header.Get("X-Backup-Passphrase"))
+	var magic [8]byte
+	_, _ = tmpUpload.ReadAt(magic[:], 0)
+
+	var readerAt io.ReaderAt = tmpUpload
+	var zipSize = size
+	var tmpDecPath string
+	var tmpDec *os.File
+
+	if backup.IsEncryptedBackup(magic[:]) {
+		_ = tmpUpload.Close()
+		encRaw, err := os.ReadFile(tmpUploadPath)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Backup-Datei konnte nicht gelesen werden")
+			return
 		}
-		dec, err := backup.DecryptBytes(raw, passphrase)
+		passphrase := r.FormValue("passphrase")
+		if passphrase == "" {
+			passphrase = r.Header.Get("X-Backup-Passphrase")
+		}
+		dec, err := backup.DecryptBytes(encRaw, passphrase)
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, backup.ErrPassphraseNeeded) {
@@ -105,11 +151,28 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 			writeError(w, status, err.Error())
 			return
 		}
-		raw = dec
+		tmpDec, err = os.CreateTemp("", "it-kb-restore-dec-*.zip")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Temporäre Datei fehlgeschlagen")
+			return
+		}
+		tmpDecPath = tmpDec.Name()
+		defer os.Remove(tmpDecPath)
+		_ = os.Chmod(tmpDecPath, 0o600)
+		if _, err := tmpDec.Write(dec); err != nil {
+			_ = tmpDec.Close()
+			writeError(w, http.StatusInternalServerError, "Entschlüsselung fehlgeschlagen")
+			return
+		}
+		readerAt = tmpDec
+		zipSize = int64(len(dec))
+		defer tmpDec.Close()
+	} else {
+		defer tmpUpload.Close()
 	}
 
 	s.restoreMu.Lock()
-	err = backup.RestoreFullBackup(r.Context(), bytes.NewReader(raw), int64(len(raw)), s.store, s.cfg.MediaDir())
+	err = backup.RestoreFullBackup(r.Context(), readerAt, zipSize, s.store, s.cfg.MediaDir())
 	if err == nil {
 		s.reloadSearchIndex(r.Context())
 	}

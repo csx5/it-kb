@@ -79,7 +79,7 @@ func Trigrams(term string) []string {
 	return out
 }
 
-// EditDistance berechnet die Damerau-Levenshtein-Distanz zwischen zwei Strings.
+// EditDistance berechnet die Damerau-Levenshtein-Distanz speicherschonend mit 3 Rolling-Zeilen.
 func EditDistance(a, b string) int {
 	ra := []rune(a)
 	rb := []rune(b)
@@ -91,31 +91,31 @@ func EditDistance(a, b string) int {
 		return la
 	}
 
-	d := make([][]int, la+1)
-	for i := range d {
-		d[i] = make([]int, lb+1)
-		d[i][0] = i
-	}
+	prevPrev := make([]int, lb+1)
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
 	for j := 0; j <= lb; j++ {
-		d[0][j] = j
+		prev[j] = j
 	}
 
 	for i := 1; i <= la; i++ {
+		curr[0] = i
 		for j := 1; j <= lb; j++ {
 			cost := 0
 			if ra[i-1] != rb[j-1] {
 				cost = 1
 			}
-			m := min3(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+			m := min3(prev[j]+1, curr[j-1]+1, prev[j-1]+cost)
 			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
-				if trans := d[i-2][j-2] + 1; trans < m {
+				if trans := prevPrev[j-2] + 1; trans < m {
 					m = trans
 				}
 			}
-			d[i][j] = m
+			curr[j] = m
 		}
+		prevPrev, prev, curr = prev, curr, prevPrev
 	}
-	return d[la][lb]
+	return prev[lb]
 }
 
 func min3(a, b, c int) int {

@@ -41,7 +41,7 @@ func (s *Server) handleRestoreRevision(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = decodeJSON(r, &body)
 
-	restored, err := s.store.RestoreArticleRevision(r.Context(), id, ver, actorName(r, body.EditorName))
+	restored, err := s.store.RestoreArticleRevision(r.Context(), id, ver, actorName(r, body.EditorName), actorUserID(r))
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "Revision oder Artikel nicht gefunden")

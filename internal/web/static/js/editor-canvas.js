@@ -50,6 +50,7 @@ export function createImageEditorController() {
   let startX = 0;
   let startY = 0;
   let baseSnapshot = null;
+  let originalSnapshot = null;
   let history = [];
   let historyIdx = -1;
   let activeResolve = null;
@@ -284,9 +285,10 @@ export function createImageEditorController() {
   });
 
   btnReset.addEventListener("click", () => {
-    if (history.length > 0) {
-      restoreSnapshot(history[0]);
-      history = [history[0]];
+    if (originalSnapshot) {
+      restoreSnapshot(originalSnapshot);
+      originalSnapshot = snapshotCanvas();
+      history = [snapshotCanvas()];
       historyIdx = 0;
       updateButtons();
     }
@@ -324,7 +326,8 @@ export function createImageEditorController() {
 
   dialog.addEventListener("keydown", (e) => {
     if (!dialog.open) return;
-    if (e.key === "Enter" && document.activeElement !== inputAlt) {
+    if (e.key === "Enter" && document.activeElement !== inputAlt && document.activeElement !== btnCancel) {
+      if (document.activeElement?.tagName === "BUTTON" && document.activeElement !== btnConfirm) return;
       e.preventDefault();
       confirmAndClose();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -355,6 +358,7 @@ export function createImageEditorController() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
 
+      originalSnapshot = snapshotCanvas();
       history = [snapshotCanvas()];
       historyIdx = 0;
       setTool("redact");

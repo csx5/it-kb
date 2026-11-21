@@ -111,6 +111,14 @@ func (s *Store) CreateArticleComment(ctx context.Context, articleID int64, autho
 		authorName = "Unbekannt"
 	}
 
+	var exists int
+	if err := s.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM articles WHERE id = ? AND deleted_at IS NULL`, articleID).Scan(&exists); err != nil {
+		return model.ArticleComment{}, err
+	}
+	if exists == 0 {
+		return model.ArticleComment{}, ErrNotFound
+	}
+
 	now := time.Now().UTC()
 	res, err := s.sqlDB.ExecContext(ctx, `
 		INSERT INTO article_comments (article_id, author_name, author_user_id, body, created_at)

@@ -199,6 +199,18 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInitialAdminSetup(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.AuthRequired {
+		writeError(w, http.StatusForbidden, "Authentifizierung ist deaktiviert")
+		return
+	}
+	if !isSameOriginCSRFValid(r) {
+		writeError(w, http.StatusForbidden, "CSRF-Prüfung fehlgeschlagen")
+		return
+	}
+
+	s.setupMu.Lock()
+	defer s.setupMu.Unlock()
+
 	count, err := s.store.CountUsers(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Benutzeranzahl konnte nicht geprüft werden")
@@ -248,6 +260,10 @@ func (s *Server) handleInitialAdminSetup(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AuthRequired && !isSameOriginCSRFValid(r) {
+		writeError(w, http.StatusForbidden, "CSRF-Prüfung fehlgeschlagen")
+		return
+	}
 	var body struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -260,8 +276,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	username := strings.ToLower(strings.TrimSpace(body.Username))
 	ip := clientIP(r)
+	userKey := ip + "|" + username
 
-	if ok, wait := s.userLimiter.Allow(username); !ok {
+	if ok, wait := s.userLimiter.Allow(userKey); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		writeError(w, http.StatusTooManyRequests, fmt.Sprintf("Zu viele Fehlversuche. Bitte in %d Sekunden erneut versuchen.", int(wait.Seconds())+1))
 		return
@@ -276,7 +293,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Dummy-Argon2id-Prüfung verhindert Timing-Rückschlüsse auf existierende Benutzernamen
 		_, _ = auth.VerifyPassword(body.Password, dummyArgonHash)
-		s.userLimiter.RecordFailure(username)
+		s.userLimiter.RecordFailure(userKey)
 		s.ipLimiter.RecordFailure(ip)
 		s.store.WriteAuditLog(r.Context(), nil, username, "login_failed", username, ip, "Unbekannter Benutzer")
 		writeError(w, http.StatusUnauthorized, "Benutzername oder Passwort ungültig")
@@ -285,7 +302,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	valid, _ := auth.VerifyPassword(body.Password, userWithHash.PasswordHash)
 	if !valid || !userWithHash.IsActive {
-		s.userLimiter.RecordFailure(username)
+		s.userLimiter.RecordFailure(userKey)
 		s.ipLimiter.RecordFailure(ip)
 		reason := "Falsches Passwort"
 		if !userWithHash.IsActive {
@@ -307,7 +324,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		ok, step := auth.VerifyTOTPCodeStep(userWithHash.TOTPSecret, body.TOTPCode, time.Now().UTC())
 		if !ok || !s.consumeTOTPStep(userWithHash.ID, step) {
-			s.userLimiter.RecordFailure(username)
+			s.userLimiter.RecordFailure(userKey)
 			s.ipLimiter.RecordFailure(ip)
 			s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_failed", userWithHash.Username, ip, "Ungültiger oder bereits verwendeter 2FA-Code")
 			writeError(w, http.StatusUnauthorized, "Ungültiger 2FA-Code")
@@ -315,8 +332,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Nur das Konto-Limit zurücksetzen (IP-Limit bleibt erhalten gegen Username-Spraying)
-	s.userLimiter.Reset(username)
+	// Nur das lokale IP+Konto-Limit zurücksetzen (IP-Gesamtlimit bleibt gegen Spraying erhalten)
+	s.userLimiter.Reset(userKey)
 
 	rawToken, tokenHash, err := auth.GenerateSessionToken()
 	if err != nil {
@@ -366,6 +383,14 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	ip := clientIP(r)
+	pwKey := fmt.Sprintf("pwchg|%s|%d", ip, u.ID)
+	if ok, wait := s.userLimiter.Allow(pwKey); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "Zu viele Fehlversuche. Bitte später erneut versuchen.")
+		return
+	}
+
 	fullUser, err := s.store.GetUserByID(r.Context(), u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Benutzer nicht gefunden")
@@ -373,9 +398,12 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	}
 	ok, _ := auth.VerifyPassword(body.CurrentPassword, fullUser.PasswordHash)
 	if !ok {
+		s.userLimiter.RecordFailure(pwKey)
+		s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "password_change_failed", u.Username, ip, "Falsches aktuelles Passwort")
 		writeError(w, http.StatusBadRequest, "Aktuelles Passwort ist nicht korrekt")
 		return
 	}
+	s.userLimiter.Reset(pwKey)
 
 	newHash, err := auth.HashPassword(body.NewPassword)
 	if err != nil {
@@ -592,6 +620,14 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
 		return
 	}
+	ip := clientIP(r)
+	limKey := fmt.Sprintf("totpen|%s|%d", ip, u.ID)
+	if ok, wait := s.userLimiter.Allow(limKey); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "Zu viele Fehlversuche. Bitte später erneut versuchen.")
+		return
+	}
+
 	var body struct {
 		Code string `json:"code"`
 	}
@@ -604,15 +640,19 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Bitte zuerst 2FA-Einrichtung starten")
 		return
 	}
-	if !auth.VerifyTOTPCode(full.TOTPSecret, body.Code, time.Now().UTC()) {
+	ok, step := auth.VerifyTOTPCodeStep(full.TOTPSecret, body.Code, time.Now().UTC())
+	if !ok || !s.consumeTOTPStep(u.ID, step) {
+		s.userLimiter.RecordFailure(limKey)
+		s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_enable_failed", u.Username, ip, "Ungültiger 2FA-Bestätigungscode")
 		writeError(w, http.StatusBadRequest, "Der eingegebene 6-stellige Code ist ungültig")
 		return
 	}
+	s.userLimiter.Reset(limKey)
 	if err := s.store.SetUserTOTPSecret(r.Context(), u.ID, full.TOTPSecret, true); err != nil {
 		writeError(w, http.StatusInternalServerError, "2FA konnte nicht aktiviert werden")
 		return
 	}
-	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_enabled", u.Username, clientIP(r), "2FA (TOTP) aktiviert")
+	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_enabled", u.Username, ip, "2FA (TOTP) aktiviert")
 	writeJSON(w, http.StatusOK, map[string]bool{"totp_enabled": true})
 }
 
@@ -622,6 +662,14 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
 		return
 	}
+	ip := clientIP(r)
+	limKey := fmt.Sprintf("totpdis|%s|%d", ip, u.ID)
+	if ok, wait := s.userLimiter.Allow(limKey); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "Zu viele Fehlversuche. Bitte später erneut versuchen.")
+		return
+	}
+
 	var body struct {
 		CurrentPassword string `json:"current_password"`
 	}
@@ -636,14 +684,25 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	ok, _ := auth.VerifyPassword(body.CurrentPassword, full.PasswordHash)
 	if !ok {
+		s.userLimiter.RecordFailure(limKey)
+		s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_disable_failed", u.Username, ip, "Falsches Passwort bei 2FA-Deaktivierung")
 		writeError(w, http.StatusBadRequest, "Aktuelles Passwort ist nicht korrekt")
 		return
 	}
+	s.userLimiter.Reset(limKey)
 	if err := s.store.SetUserTOTPSecret(r.Context(), u.ID, "", false); err != nil {
 		writeError(w, http.StatusInternalServerError, "2FA konnte nicht deaktiviert werden")
 		return
 	}
-	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_disabled", u.Username, clientIP(r), "2FA (TOTP) deaktiviert")
+	// Andere Sitzungen sicherheitshalber beenden und frische Sitzung für aktuellen Nutzer ausstellen
+	_ = s.store.DeleteUserSessions(r.Context(), u.ID)
+	if rawToken, tokenHash, err := auth.GenerateSessionToken(); err == nil {
+		expires := time.Now().UTC().Add(s.sessionDuration())
+		if err := s.store.CreateSession(r.Context(), tokenHash, u.ID, expires); err == nil {
+			s.setSessionCookie(w, r, rawToken, expires)
+		}
+	}
+	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_disabled", u.Username, ip, "2FA (TOTP) deaktiviert")
 	writeJSON(w, http.StatusOK, map[string]bool{"totp_enabled": false})
 }
 

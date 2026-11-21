@@ -59,8 +59,13 @@ func openSQLite(dbPath string) (*sql.DB, error) {
 }
 
 // ReplaceFromFile schließt die laufende SQLite-Verbindung (wichtig u. a. für Windows),
-// ersetzt die Datenbankdatei durch einen validierten Snapshot und öffnet sie neu.
+// ersetzt die Datenbankdatei atomar mit Rollback-Sicherung und öffnet sie neu.
 func (s *Store) ReplaceFromFile(snapshotPath string) error {
+	raw, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		return fmt.Errorf("snapshot lesen: %w", err)
+	}
+
 	if s.sqlDB != nil {
 		_ = s.sqlDB.Close()
 		s.sqlDB = nil
@@ -68,20 +73,46 @@ func (s *Store) ReplaceFromFile(snapshotPath string) error {
 	_ = os.Remove(s.dbPath + "-wal")
 	_ = os.Remove(s.dbPath + "-shm")
 
-	raw, err := os.ReadFile(snapshotPath)
-	if err != nil {
-		return fmt.Errorf("snapshot lesen: %w", err)
+	prevPath := s.dbPath + ".rollback"
+	hasPrev := false
+	if oldRaw, err := os.ReadFile(s.dbPath); err == nil {
+		if writeErr := os.WriteFile(prevPath, oldRaw, 0o600); writeErr == nil {
+			hasPrev = true
+		}
 	}
+	defer func() {
+		if hasPrev {
+			_ = os.Remove(prevPath)
+		}
+	}()
+
+	rollback := func(cause error) error {
+		if hasPrev {
+			if oldRaw, rErr := os.ReadFile(prevPath); rErr == nil {
+				_ = os.WriteFile(s.dbPath, oldRaw, 0o640)
+				if reopened, oErr := openSQLite(s.dbPath); oErr == nil {
+					s.sqlDB = reopened
+				}
+			}
+		}
+		return cause
+	}
+
 	if err := os.WriteFile(s.dbPath, raw, 0o640); err != nil {
-		return fmt.Errorf("datenbankdatei überschreiben: %w", err)
+		return rollback(fmt.Errorf("datenbankdatei überschreiben: %w", err))
 	}
 
 	sqlDB, err := openSQLite(s.dbPath)
 	if err != nil {
-		return err
+		return rollback(err)
 	}
 	s.sqlDB = sqlDB
-	return s.migrate()
+	if err := s.migrate(); err != nil {
+		_ = s.sqlDB.Close()
+		s.sqlDB = nil
+		return rollback(err)
+	}
+	return nil
 }
 
 func (s *Store) Close() error {

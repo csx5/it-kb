@@ -120,7 +120,7 @@ func (s *Server) handleServeMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListOrphanMedia(w http.ResponseWriter, r *http.Request) {
-	orphans, err := s.store.ListOrphanedMediaFiles(r.Context())
+	orphans, err := s.store.ListOrphanedMediaFiles(r.Context(), s.orphanMinAge)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Verwaiste Dateien konnten nicht ermittelt werden")
 		return
@@ -137,7 +137,7 @@ func (s *Server) handleListOrphanMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCleanupOrphanMedia(w http.ResponseWriter, r *http.Request) {
-	orphans, err := s.store.ListOrphanedMediaFiles(r.Context())
+	orphans, err := s.store.ListOrphanedMediaFiles(r.Context(), s.orphanMinAge)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Verwaiste Dateien konnten nicht ermittelt werden")
 		return
@@ -155,6 +155,8 @@ func (s *Server) handleCleanupOrphanMedia(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "media_orphan_cleanup", "media", clientIP(r),
+		fmt.Sprintf("%d Dateien entfernt (%d Bytes)", deleted, freedBytes))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deleted":     deleted,
 		"freed_bytes": freedBytes,

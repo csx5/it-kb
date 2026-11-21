@@ -199,6 +199,9 @@ func RestoreFullBackup(ctx context.Context, r io.ReaderAt, size int64, store *db
 			hasDB = true
 		case strings.HasPrefix(name, "media/"):
 			rel := strings.TrimPrefix(name, "media/")
+			if rel == "" || strings.HasSuffix(name, "/") {
+				continue
+			}
 			target = filepath.Join(stagedMedia, filepath.FromSlash(rel))
 		default:
 			continue
@@ -297,7 +300,7 @@ func verifySQLiteSnapshot(ctx context.Context, path string) error {
 	}
 
 	// Pflicht-Tabellen prüfen
-	required := []string{"categories", "articles", "article_revisions", "synonym_groups", "media_files", "users", "sessions"}
+	required := []string{"schema_migrations", "settings", "categories", "articles", "article_revisions", "synonym_groups", "media_files", "users", "sessions"}
 	for _, tbl := range required {
 		var exists int
 		if err := roDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, tbl).Scan(&exists); err != nil || exists == 0 {
@@ -395,23 +398,28 @@ func copyDir(srcDir, dstDir string) error {
 		if err != nil {
 			return err
 		}
-		dst := filepath.Join(dstDir, rel)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
-			return err
-		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-		out, err := os.Create(dst)
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-		_, err = io.Copy(out, in)
-		return err
+		return copySingleFile(path, filepath.Join(dstDir, rel))
 	})
+}
+
+func copySingleFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func writeJSONToZip(zw *zip.Writer, name string, payload any) error {

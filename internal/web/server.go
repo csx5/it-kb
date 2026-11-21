@@ -35,8 +35,10 @@ type Server struct {
 	userLimiter  *auth.LoginRateLimiter
 	ipLimiter    *auth.LoginRateLimiter
 	restoreMu    sync.RWMutex
+	setupMu      sync.Mutex
 	totpMu       sync.Mutex
 	lastTOTPStep map[int64]int64
+	orphanMinAge time.Duration
 	mux          *http.ServeMux
 	version      string
 }
@@ -56,6 +58,7 @@ func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, versio
 		userLimiter:  auth.NewLoginRateLimiter(5, 5*time.Minute, 5*time.Minute),
 		ipLimiter:    auth.NewLoginRateLimiter(15, 5*time.Minute, 5*time.Minute),
 		lastTOTPStep: make(map[int64]int64),
+		orphanMinAge: time.Hour,
 		mux:          http.NewServeMux(),
 		version:      version,
 	}
@@ -133,7 +136,8 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("PUT /api/settings", s.requireAuth(model.RoleAdmin, s.handleUpdateSettings))
 	s.mux.HandleFunc("DELETE /api/trash", s.requireAuth(model.RoleAdmin, s.handleEmptyTrash))
 	s.mux.HandleFunc("GET /api/backup/full", s.requireAuth(model.RoleAdmin, s.handleFullBackupDownload))
-	s.mux.HandleFunc("POST /api/backup/restore", s.requireAuth(model.RoleAdmin, s.handleFullBackupRestore))
+	// Restore prüft Auth intern unter restoreMu.RLock und wechselt danach exklusiv auf restoreMu.Lock
+	s.mux.HandleFunc("POST /api/backup/restore", s.handleFullBackupRestoreEntry)
 	s.mux.HandleFunc("GET /api/admin/users", s.requireAuth(model.RoleAdmin, s.handleAdminListUsers))
 	s.mux.HandleFunc("POST /api/admin/users", s.requireAuth(model.RoleAdmin, s.handleAdminCreateUser))
 	s.mux.HandleFunc("PUT /api/admin/users/{id}", s.requireAuth(model.RoleAdmin, s.handleAdminUpdateUser))
