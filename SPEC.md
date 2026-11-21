@@ -69,4 +69,13 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] 3 Rollen: `admin` (Vollzugriff + Admin-Konsole), `editor` (Erstellen/Bearbeiten/Upload/Export/Synonyme/Kategorien), `reader` (Nur Lesen/Suchen/Historie)
   - [x] Admin-Konsole mit Benutzerverwaltung (Anlegen, Rolle, Aktiv/Sperren inkl. sofortiger Session-Beendigung, Passwort-Reset, Löschen mit Schutz des letzten Admins) und Sicherheits-Audit-Log (`audit_log`, Migration `002_auth_audit.sql`)
   - [x] Eigenes Passwort ändern (beendet automatisch alle anderen Sitzungen)
-  - [x] Umfassende Security- & RBAC-Tests (`internal/auth/auth_test.go`, `internal/web/auth_test.go`)
+- [x] **Erweiterungen (Sicherheit, Datenschutz & IT-Alltag):**
+  - [x] **1-Flag-HTTPS (`--tls-auto`):** `internal/tlsutil/selfsigned.go` erzeugt lokal ECDSA-P256-Zertifikate inkl. Hostname & LAN-IPs unter `data/certs/`
+  - [x] **AES-256-GCM-verschlüsselte Voll-Backups:** `internal/backup/crypto.go` (Argon2id-Key-Derivation, `.itkb.enc`) in Admin-Konsole, Restore und CLI (`it-kb backup --passphrase`)
+  - [x] **Optionales 2FA (TOTP / RFC 6238):** `internal/auth/totp.go`, Einrichtung & Deaktivierung im Benutzer-Sicherheitsdialog, 2-Schritt-Login, Admin-2FA-Reset
+  - [x] **Lokaler Sensible-Daten-Warner im Editor:** `internal/web/static/js/pii-scanner.js` warnt vor dem Speichern bei E-Mails, Klartext-Passwörtern, Keys, IBANs, Lizenzschlüsseln und internen IPs
+  - [x] **Support-Alltag (ohne Such-/Mitarbeiter-Tracking):** „Hat geholfen“-Zähler (inkl. sanftem Such-Boost), Angepinnte Dauerbrenner, Praxis-Kommentare unter Artikeln, algorithmische „Ähnliche Artikel“-Box (`Engine.RelatedArticles`) und Druck-/PDF-Stylesheet (`@media print`)
+
+### Später vorgemerkt (Open-Source / GitHub-Politur)
+- [ ] GitHub Actions CI (`go vet`, `go test`) & automatische Multi-Plattform-Releases bei Git-Tags
+- [ ] Screenshots / Vorschau-Ansichten in `README.md`

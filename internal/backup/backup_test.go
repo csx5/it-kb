@@ -122,3 +122,23 @@ func TestPortableMarkdownExportAndFullBackupRestore(t *testing.T) {
 		t.Fatalf("mediendatei nach restore fehlt: %v", err)
 	}
 }
+
+func TestBackupEncryptionRoundtrip(t *testing.T) {
+	plain := []byte("geheimes-backup-zip-payload")
+	enc, err := EncryptBytes(plain, "StarkeBackupPassphrase!")
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if !IsEncryptedBackup(enc) {
+		t.Fatalf("verschlüsseltes backup nicht erkannt")
+	}
+
+	if _, err := DecryptBytes(enc, "FalschePassphrase!"); err == nil {
+		t.Fatalf("falsche passphrase hätte abgelehnt werden müssen")
+	}
+
+	dec, err := DecryptBytes(enc, "StarkeBackupPassphrase!")
+	if err != nil || !bytes.Equal(dec, plain) {
+		t.Fatalf("decrypt fehlgeschlagen: err=%v dec=%q", err, string(dec))
+	}
+}

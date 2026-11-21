@@ -2,10 +2,12 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/csx5/it-kb/internal/backup"
@@ -41,6 +43,27 @@ func (s *Server) handleFullBackupDownload(w http.ResponseWriter, r *http.Request
 	}
 	_ = tmpFile.Close()
 
+	passphrase := strings.TrimSpace(r.Header.Get("X-Backup-Passphrase"))
+	if passphrase != "" {
+		plain, err := os.ReadFile(tmpPath)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Backup-Datei konnte nicht gelesen werden")
+			return
+		}
+		enc, err := backup.EncryptBytes(plain, passphrase)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		filename := fmt.Sprintf("it-kb-vollbackup-%s.itkb.enc", time.Now().Format("20060102-150405"))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_download_encrypted", "full_backup", clientIP(r), filename)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(enc)
+		return
+	}
+
 	filename := fmt.Sprintf("it-kb-vollbackup-%s.zip", time.Now().Format("20060102-150405"))
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
@@ -61,27 +84,34 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 	}
 	defer file.Close()
 
-	tmpFile, err := os.CreateTemp("", "it-kb-upload-restore-*.zip")
+	raw, err := io.ReadAll(file)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Temporäre Datei fehlgeschlagen")
-		return
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	size, err := io.Copy(tmpFile, file)
-	if err != nil {
-		_ = tmpFile.Close()
 		writeError(w, http.StatusBadRequest, "Backup-Upload unvollständig")
 		return
 	}
 
-	if err := backup.RestoreFullBackup(r.Context(), tmpFile, size, s.store, s.cfg.MediaDir()); err != nil {
-		_ = tmpFile.Close()
+	// Automatische Erkennung und Entschlüsselung bei AES-256-GCM Backups (.itkb.enc)
+	if backup.IsEncryptedBackup(raw) {
+		passphrase := strings.TrimSpace(r.FormValue("passphrase"))
+		if passphrase == "" {
+			passphrase = strings.TrimSpace(r.Header.Get("X-Backup-Passphrase"))
+		}
+		dec, err := backup.DecryptBytes(raw, passphrase)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, backup.ErrPassphraseNeeded) {
+				status = http.StatusUnprocessableEntity
+			}
+			writeError(w, status, err.Error())
+			return
+		}
+		raw = dec
+	}
+
+	if err := backup.RestoreFullBackup(r.Context(), bytes.NewReader(raw), int64(len(raw)), s.store, s.cfg.MediaDir()); err != nil {
 		writeError(w, http.StatusBadRequest, "Restore fehlgeschlagen: "+err.Error())
 		return
 	}
-	_ = tmpFile.Close()
 
 	// Suchindex nach Restore sofort neu aufbauen
 	s.reloadSearchIndex(r.Context())

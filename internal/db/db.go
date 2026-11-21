@@ -102,10 +102,19 @@ func (s *Store) migrate() error {
 	}{
 		{1, "migrations/001_init.sql"},
 		{2, "migrations/002_auth_audit.sql"},
+		{3, "migrations/003_v3_features.sql"},
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, st := range steps {
+		// Bei Migration > 1 prüfen, ob sie bereits angewendet wurde (wichtig für ALTER TABLE)
+		if st.version > 1 {
+			var applied int
+			if err := s.sqlDB.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, st.version).Scan(&applied); err == nil && applied > 0 {
+				continue
+			}
+		}
+
 		raw, err := migrationsFS.ReadFile(st.file)
 		if err != nil {
 			return fmt.Errorf("migration %03d lesen: %w", st.version, err)
@@ -187,11 +196,12 @@ func (s *Store) ListAllArticles(ctx context.Context) ([]model.Article, error) {
 			COALESCE(c.name, ''),
 			a.status, a.error_codes, a.symptoms, a.solution_body,
 			a.tags_json, a.author_name, a.author_user_id, a.version,
+			a.helpful_count, a.is_pinned,
 			a.last_verified_at, a.last_verified_by,
 			a.created_at, a.updated_at, a.deleted_at
 		FROM articles a
 		LEFT JOIN categories c ON c.id = a.category_id
-		ORDER BY a.updated_at DESC
+		ORDER BY a.is_pinned DESC, a.updated_at DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -216,6 +226,7 @@ func (s *Store) GetArticleByID(ctx context.Context, id int64) (model.Article, er
 			COALESCE(c.name, ''),
 			a.status, a.error_codes, a.symptoms, a.solution_body,
 			a.tags_json, a.author_name, a.author_user_id, a.version,
+			a.helpful_count, a.is_pinned,
 			a.last_verified_at, a.last_verified_by,
 			a.created_at, a.updated_at, a.deleted_at
 		FROM articles a
@@ -232,6 +243,7 @@ type rowScanner interface {
 func scanArticle(r rowScanner) (model.Article, error) {
 	var a model.Article
 	var catID, authorUID sql.NullInt64
+	var pinnedInt int
 	var verifiedAt, deletedAt sql.NullString
 	var tagsJSON, createdStr, updatedStr string
 
@@ -240,12 +252,14 @@ func scanArticle(r rowScanner) (model.Article, error) {
 		&a.CategoryName,
 		&a.Status, &a.ErrorCodes, &a.Symptoms, &a.SolutionBody,
 		&tagsJSON, &a.AuthorName, &authorUID, &a.Version,
+		&a.HelpfulCount, &pinnedInt,
 		&verifiedAt, &a.LastVerifiedBy,
 		&createdStr, &updatedStr, &deletedAt,
 	)
 	if err != nil {
 		return a, err
 	}
+	a.IsPinned = pinnedInt == 1
 	if catID.Valid {
 		v := catID.Int64
 		a.CategoryID = &v

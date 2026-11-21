@@ -43,6 +43,8 @@ type Article struct {
 	AuthorName     string     `json:"author_name"`
 	AuthorUserID   *int64     `json:"author_user_id,omitempty"`
 	Version        int        `json:"version"`
+	HelpfulCount   int        `json:"helpful_count"`
+	IsPinned       bool       `json:"is_pinned"`
 	LastVerifiedAt *time.Time `json:"last_verified_at,omitempty"`
 	LastVerifiedBy string     `json:"last_verified_by,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -93,7 +95,17 @@ type User struct {
 	DisplayName string    `json:"display_name"`
 	Role        string    `json:"role"`
 	IsActive    bool      `json:"is_active"`
+	TOTPEnabled bool      `json:"totp_enabled"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+type ArticleComment struct {
+	ID           int64     `json:"id"`
+	ArticleID    int64     `json:"article_id"`
+	AuthorName   string    `json:"author_name"`
+	AuthorUserID *int64    `json:"author_user_id,omitempty"`
+	Body         string    `json:"body"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type AuditLogEntry struct {

@@ -73,12 +73,18 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("POST /api/auth/password", s.requireAuth(model.RoleReader, s.handleChangeOwnPassword))
+	s.mux.HandleFunc("POST /api/auth/totp/setup", s.requireAuth(model.RoleReader, s.handleTOTPSetup))
+	s.mux.HandleFunc("POST /api/auth/totp/enable", s.requireAuth(model.RoleReader, s.handleTOTPEnable))
+	s.mux.HandleFunc("POST /api/auth/totp/disable", s.requireAuth(model.RoleReader, s.handleTOTPDisable))
 
-	// Lesen (Reader+)
+	// Lesen & Feedback (Reader+)
 	s.mux.HandleFunc("GET /api/meta", s.requireAuth(model.RoleReader, s.handleMeta))
 	s.mux.HandleFunc("GET /api/search", s.requireAuth(model.RoleReader, s.handleSearch))
 	s.mux.HandleFunc("GET /api/articles/{id}", s.requireAuth(model.RoleReader, s.handleGetArticle))
 	s.mux.HandleFunc("GET /api/articles/{id}/revisions", s.requireAuth(model.RoleReader, s.handleListRevisions))
+	s.mux.HandleFunc("POST /api/articles/{id}/helpful", s.requireAuth(model.RoleReader, s.handleHelpfulArticle))
+	s.mux.HandleFunc("POST /api/articles/{id}/comments", s.requireAuth(model.RoleReader, s.handleCreateComment))
+	s.mux.HandleFunc("DELETE /api/articles/{id}/comments/{commentId}", s.requireAuth(model.RoleReader, s.handleDeleteComment))
 	s.mux.HandleFunc("GET /media/{id}", s.requireAuth(model.RoleReader, s.handleServeMedia))
 	s.mux.HandleFunc("GET /api/categories", s.requireAuth(model.RoleReader, s.handleListCategories))
 	s.mux.HandleFunc("GET /api/synonyms", s.requireAuth(model.RoleReader, s.handleListSynonyms))
@@ -90,6 +96,7 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("DELETE /api/articles/{id}", s.requireAuth(model.RoleEditor, s.handleSoftDeleteArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/restore", s.requireAuth(model.RoleEditor, s.handleRestoreArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/verify", s.requireAuth(model.RoleEditor, s.handleVerifyArticle))
+	s.mux.HandleFunc("POST /api/articles/{id}/pin", s.requireAuth(model.RoleEditor, s.handlePinArticle))
 	s.mux.HandleFunc("POST /api/articles/{id}/lock", s.requireAuth(model.RoleEditor, s.handleHeartbeatLock))
 	s.mux.HandleFunc("DELETE /api/articles/{id}/lock", s.requireAuth(model.RoleEditor, s.handleReleaseLock))
 	s.mux.HandleFunc("POST /api/articles/{id}/revisions/{version}/restore", s.requireAuth(model.RoleEditor, s.handleRestoreRevision))
@@ -114,6 +121,7 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("POST /api/admin/users", s.requireAuth(model.RoleAdmin, s.handleAdminCreateUser))
 	s.mux.HandleFunc("PUT /api/admin/users/{id}", s.requireAuth(model.RoleAdmin, s.handleAdminUpdateUser))
 	s.mux.HandleFunc("POST /api/admin/users/{id}/password", s.requireAuth(model.RoleAdmin, s.handleAdminResetUserPassword))
+	s.mux.HandleFunc("POST /api/admin/users/{id}/totp-reset", s.requireAuth(model.RoleAdmin, s.handleAdminResetUserTOTP))
 	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAuth(model.RoleAdmin, s.handleAdminDeleteUser))
 	s.mux.HandleFunc("GET /api/admin/audit", s.requireAuth(model.RoleAdmin, s.handleAdminListAudit))
 
@@ -238,12 +246,22 @@ func (s *Server) handleGetArticle(w http.ResponseWriter, r *http.Request) {
 
 	symptomsHTML, _ := s.md.RenderHTML(article.Symptoms)
 	solutionHTML, _ := s.md.RenderHTML(article.SolutionBody)
+	comments, _ := s.store.ListArticleComments(r.Context(), article.ID)
+	if comments == nil {
+		comments = []model.ArticleComment{}
+	}
+	related := s.engine.RelatedArticles(article.ID, 4)
+	if related == nil {
+		related = []model.Article{}
+	}
 	lock, hasLock := s.locks.Get(article.ID)
 
 	resp := map[string]any{
-		"article":       article,
-		"symptoms_html": symptomsHTML,
-		"solution_html": solutionHTML,
+		"article":          article,
+		"symptoms_html":    symptomsHTML,
+		"solution_html":    solutionHTML,
+		"comments":         comments,
+		"related_articles": related,
 	}
 	if hasLock {
 		resp["active_lock"] = lock

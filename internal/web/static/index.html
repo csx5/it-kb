@@ -23,6 +23,10 @@
           <span>Passwort</span>
           <input type="password" id="login-password" autocomplete="current-password" required>
         </label>
+        <label class="field hidden" id="login-totp-wrap">
+          <span>2FA-Code (6-stellig aus Authenticator-App)</span>
+          <input type="text" id="login-totp-code" inputmode="numeric" pattern="[0-9 ]*" maxlength="8" autocomplete="one-time-code" placeholder="123456">
+        </label>
         <div id="login-error" class="banner banner-danger hidden"></div>
         <button type="submit" class="btn btn-primary btn-block">Anmelden</button>
       </form>
@@ -329,12 +333,16 @@
 
           <div class="admin-card" id="admin-backup-card">
             <h3>Backup &amp; Portabler Export</h3>
-            <p class="modal-desc">Portabler Markdown-Export (ohne Vendor-Lock-in) sowie konsistentes SQLite-Voll-Backup inkl. Medien und Restore.</p>
+            <p class="modal-desc">Portabler Markdown-Export (ohne Vendor-Lock-in) sowie konsistentes SQLite-Voll-Backup inkl. Medien. Mit optionaler Passphrase (ab 8 Zeichen) wird das Voll-Backup mit AES-256-GCM verschlüsselt (<code>.itkb.enc</code>).</p>
+            <label class="field backup-pw-field">
+              <span>Optionale Backup-Passphrase (AES-256-GCM für Voll-Backup &amp; Restore)</span>
+              <input type="password" id="backup-passphrase" placeholder="Leer lassen für unverschlüsseltes ZIP, oder min. 8 Zeichen">
+            </label>
             <div class="detail-actions" id="admin-backup-actions">
               <a href="/api/export/markdown" id="btn-export-md" class="btn">Markdown-Export (ZIP)</a>
-              <a href="/api/backup/full" id="btn-backup-full" class="btn btn-primary">Voll-Backup herunterladen (ZIP)</a>
+              <a href="/api/backup/full" id="btn-backup-full" class="btn btn-primary">Voll-Backup herunterladen</a>
               <button type="button" id="btn-restore-backup" class="btn btn-danger">Voll-Backup wiederherstellen</button>
-              <input type="file" id="restore-backup-input" accept=".zip" class="hidden">
+              <input type="file" id="restore-backup-input" accept=".zip,.enc" class="hidden">
             </div>
           </div>
         </div>
@@ -426,8 +434,8 @@
 
   <dialog id="password-dialog" class="modal-dialog modal-narrow">
     <div class="modal-box">
-      <h3>Eigenes Passwort ändern</h3>
-      <p class="modal-desc">Nach dem Ändern werden alle anderen offenen Sitzungen automatisch abgemeldet.</p>
+      <h3>Konto &amp; Sicherheit</h3>
+      <p class="modal-desc">Nach dem Passwortwechsel werden alle anderen offenen Sitzungen automatisch abgemeldet.</p>
       <form id="change-pw-form" class="auth-form">
         <label class="field">
           <span>Aktuelles Passwort</span>
@@ -442,10 +450,43 @@
           <input type="password" id="pw-confirm" autocomplete="new-password" minlength="10" required>
         </label>
         <div class="modal-actions">
-          <button type="button" id="btn-pw-cancel" class="btn">Abbrechen</button>
           <button type="submit" class="btn btn-primary">Passwort speichern</button>
         </div>
       </form>
+
+      <div class="totp-box">
+        <h4>Zwei-Faktor-Authentifizierung (TOTP)</h4>
+        <p id="totp-status-text" class="modal-desc"></p>
+        <div id="totp-setup-area" class="hidden">
+          <p class="modal-desc">Schlüssel in Ihrer Authenticator-App (z. B. Aegis, Bitwarden, Microsoft/Google Authenticator) manuell eintragen:</p>
+          <div class="totp-secret-row">
+            <code id="totp-secret-code" class="badge badge-code"></code>
+            <button type="button" id="btn-totp-copy" class="btn btn-sm">Kopieren</button>
+          </div>
+          <label class="field">
+            <span>6-stelligen Bestätigungscode eingeben</span>
+            <input type="text" id="totp-confirm-code" inputmode="numeric" maxlength="8" placeholder="123456">
+          </label>
+          <button type="button" id="btn-totp-confirm" class="btn btn-primary">2FA aktivieren</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btn-totp-start" class="btn">2FA einrichten</button>
+          <button type="button" id="btn-totp-disable" class="btn btn-danger hidden">2FA deaktivieren</button>
+          <button type="button" id="btn-pw-cancel" class="btn">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="pii-dialog" class="modal-dialog">
+    <div class="modal-box">
+      <h3>Hinweis: Mögliche sensible Daten erkannt</h3>
+      <p class="modal-desc">Die lokale Prüfung hat Muster gefunden, die auf Kundendaten, interne IPs oder Zugangsdaten hindeuten könnten. Bitte prüfen Sie die Stellen vor dem Speichern:</p>
+      <div id="pii-findings-list" class="pii-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="btn-pii-cancel" class="btn btn-primary">Zurück zum Editor &amp; bereinigen</button>
+        <button type="button" id="btn-pii-proceed" class="btn btn-danger">Trotzdem speichern</button>
+      </div>
     </div>
   </dialog>
 

@@ -251,6 +251,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		TOTPCode string `json:"totp_code"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "Ungültige JSON-Daten")
@@ -294,6 +295,23 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_failed", userWithHash.Username, ip, reason)
 		writeError(w, http.StatusUnauthorized, "Benutzername oder Passwort ungültig")
 		return
+	}
+
+	// Optionales 2FA (TOTP) prüfen, falls für dieses Konto aktiviert
+	if userWithHash.TOTPEnabled {
+		if strings.TrimSpace(body.TOTPCode) == "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"totp_required": true,
+			})
+			return
+		}
+		if !auth.VerifyTOTPCode(userWithHash.TOTPSecret, body.TOTPCode, time.Now().UTC()) {
+			s.userLimiter.RecordFailure(userKey)
+			s.ipLimiter.RecordFailure(ip)
+			s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_failed", userWithHash.Username, ip, "Ungültiger 2FA-Code")
+			writeError(w, http.StatusUnauthorized, "Ungültiger 2FA-Code")
+			return
+		}
 	}
 
 	s.userLimiter.Reset(userKey)
@@ -517,4 +535,109 @@ func (s *Server) handleAdminListAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+}
+
+// --- Optionales 2FA (TOTP) ---
+
+func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
+		return
+	}
+	secret, err := auth.GenerateTOTPSecret()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "2FA-Schlüssel konnte nicht erzeugt werden")
+		return
+	}
+	// Secret unaktiviert speichern, bis der Benutzer den ersten 6-stelligen Code bestätigt
+	if err := s.store.SetUserTOTPSecret(r.Context(), u.ID, secret, false); err != nil {
+		writeError(w, http.StatusInternalServerError, "2FA-Schlüssel konnte nicht gespeichert werden")
+		return
+	}
+	uri := auth.BuildTOTPURI(s.cfg.SiteTitle, u.Username, secret)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"secret": secret,
+		"uri":    uri,
+	})
+}
+
+func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
+		return
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "Ungültige JSON-Daten")
+		return
+	}
+	full, err := s.store.GetUserByID(r.Context(), u.ID)
+	if err != nil || full.TOTPSecret == "" {
+		writeError(w, http.StatusBadRequest, "Bitte zuerst 2FA-Einrichtung starten")
+		return
+	}
+	if !auth.VerifyTOTPCode(full.TOTPSecret, body.Code, time.Now().UTC()) {
+		writeError(w, http.StatusBadRequest, "Der eingegebene 6-stellige Code ist ungültig")
+		return
+	}
+	if err := s.store.SetUserTOTPSecret(r.Context(), u.ID, full.TOTPSecret, true); err != nil {
+		writeError(w, http.StatusInternalServerError, "2FA konnte nicht aktiviert werden")
+		return
+	}
+	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_enabled", u.Username, clientIP(r), "2FA (TOTP) aktiviert")
+	writeJSON(w, http.StatusOK, map[string]bool{"totp_enabled": true})
+}
+
+func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	if u == nil {
+		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
+		return
+	}
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "Ungültige JSON-Daten")
+		return
+	}
+	full, err := s.store.GetUserByID(r.Context(), u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Benutzer nicht gefunden")
+		return
+	}
+	ok, _ := auth.VerifyPassword(body.CurrentPassword, full.PasswordHash)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Aktuelles Passwort ist nicht korrekt")
+		return
+	}
+	if err := s.store.SetUserTOTPSecret(r.Context(), u.ID, "", false); err != nil {
+		writeError(w, http.StatusInternalServerError, "2FA konnte nicht deaktiviert werden")
+		return
+	}
+	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_disabled", u.Username, clientIP(r), "2FA (TOTP) deaktiviert")
+	writeJSON(w, http.StatusOK, map[string]bool{"totp_enabled": false})
+}
+
+func (s *Server) handleAdminResetUserTOTP(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Ungültige Benutzer-ID")
+		return
+	}
+	target, err := s.store.GetUserByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Benutzer nicht gefunden")
+		return
+	}
+	if err := s.store.SetUserTOTPSecret(r.Context(), id, "", false); err != nil {
+		writeError(w, http.StatusInternalServerError, "2FA-Reset fehlgeschlagen")
+		return
+	}
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_totp_reset", target.Username, clientIP(r), "2FA durch Administrator zurückgesetzt")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }

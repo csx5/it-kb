@@ -46,3 +46,26 @@ func TestLoginRateLimiter(t *testing.T) {
 		t.Fatalf("nach reset sollte wieder erlaubt sein")
 	}
 }
+
+func TestTOTPGenerateAndVerify(t *testing.T) {
+	secret, err := GenerateTOTPSecret()
+	if err != nil || len(secret) < 20 {
+		t.Fatalf("totp secret fehler: %v", err)
+	}
+
+	now := time.Now().UTC()
+	code, err := GenerateTOTPCode(secret, now)
+	if err != nil || len(code) != 6 {
+		t.Fatalf("totp code fehler: %v %q", err, code)
+	}
+
+	if !VerifyTOTPCode(secret, code, now) {
+		t.Fatalf("gültiger totp-code abgelehnt")
+	}
+	if !VerifyTOTPCode(secret, code, now.Add(29*time.Second)) {
+		t.Fatalf("totp-code innerhalb ±1 fenster abgelehnt")
+	}
+	if VerifyTOTPCode(secret, "000000", now) && code != "000000" {
+		t.Fatalf("falscher totp-code akzeptiert")
+	}
+}

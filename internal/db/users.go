@@ -19,6 +19,7 @@ var (
 type UserWithHash struct {
 	model.User
 	PasswordHash string
+	TOTPSecret   string
 }
 
 func (s *Store) CountUsers(ctx context.Context) (int, error) {
@@ -71,12 +72,12 @@ func (s *Store) CreateUser(ctx context.Context, username, displayName, passwordH
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (UserWithHash, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	var u UserWithHash
-	var activeInt int
+	var activeInt, totpInt int
 	var createdStr string
 	err := s.sqlDB.QueryRowContext(ctx, `
-		SELECT id, username, display_name, password_hash, role, is_active, created_at
+		SELECT id, username, display_name, password_hash, role, is_active, totp_secret, totp_enabled, created_at
 		FROM users WHERE username = ?
-	`, username).Scan(&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &activeInt, &createdStr)
+	`, username).Scan(&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &activeInt, &u.TOTPSecret, &totpInt, &createdStr)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return u, ErrNotFound
@@ -84,18 +85,19 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (UserWit
 		return u, err
 	}
 	u.IsActive = activeInt == 1
+	u.TOTPEnabled = totpInt == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return u, nil
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id int64) (UserWithHash, error) {
 	var u UserWithHash
-	var activeInt int
+	var activeInt, totpInt int
 	var createdStr string
 	err := s.sqlDB.QueryRowContext(ctx, `
-		SELECT id, username, display_name, password_hash, role, is_active, created_at
+		SELECT id, username, display_name, password_hash, role, is_active, totp_secret, totp_enabled, created_at
 		FROM users WHERE id = ?
-	`, id).Scan(&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &activeInt, &createdStr)
+	`, id).Scan(&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &activeInt, &u.TOTPSecret, &totpInt, &createdStr)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return u, ErrNotFound
@@ -103,13 +105,14 @@ func (s *Store) GetUserByID(ctx context.Context, id int64) (UserWithHash, error)
 		return u, err
 	}
 	u.IsActive = activeInt == 1
+	u.TOTPEnabled = totpInt == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return u, nil
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
 	rows, err := s.sqlDB.QueryContext(ctx, `
-		SELECT id, username, display_name, role, is_active, created_at
+		SELECT id, username, display_name, role, is_active, totp_enabled, created_at
 		FROM users
 		ORDER BY CASE role WHEN 'admin' THEN 1 WHEN 'editor' THEN 2 ELSE 3 END, username ASC
 	`)
@@ -121,12 +124,13 @@ func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
 	var out []model.User
 	for rows.Next() {
 		var u model.User
-		var activeInt int
+		var activeInt, totpInt int
 		var createdStr string
-		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &activeInt, &createdStr); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &activeInt, &totpInt, &createdStr); err != nil {
 			return nil, err
 		}
 		u.IsActive = activeInt == 1
+		u.TOTPEnabled = totpInt == 1
 		u.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 		out = append(out, u)
 	}
@@ -222,14 +226,14 @@ func (s *Store) CreateSession(ctx context.Context, tokenHash string, userID int6
 
 func (s *Store) GetSessionUser(ctx context.Context, tokenHash string) (model.User, error) {
 	var u model.User
-	var activeInt int
+	var activeInt, totpInt int
 	var createdStr, expiresStr string
 	err := s.sqlDB.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.display_name, u.role, u.is_active, u.created_at, s.expires_at
+		SELECT u.id, u.username, u.display_name, u.role, u.is_active, u.totp_enabled, u.created_at, s.expires_at
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ?
-	`, tokenHash).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &activeInt, &createdStr, &expiresStr)
+	`, tokenHash).Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &activeInt, &totpInt, &createdStr, &expiresStr)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return u, ErrNotFound
@@ -243,6 +247,7 @@ func (s *Store) GetSessionUser(ctx context.Context, tokenHash string) (model.Use
 		return model.User{}, ErrNotFound
 	}
 	u.IsActive = true
+	u.TOTPEnabled = totpInt == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, createdStr)
 	return u, nil
 }

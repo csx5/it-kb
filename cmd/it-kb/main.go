@@ -19,6 +19,7 @@ import (
 	"github.com/csx5/it-kb/internal/db"
 	"github.com/csx5/it-kb/internal/model"
 	"github.com/csx5/it-kb/internal/search"
+	"github.com/csx5/it-kb/internal/tlsutil"
 	"github.com/csx5/it-kb/internal/web"
 )
 
@@ -54,6 +55,7 @@ func parseConfigFlags(args []string) (config.Config, error) {
 	title := fs.String("title", "", "Seitentitel in der Web-Oberfläche")
 	authFlag := fs.String("auth", "", "Login-Zwang aktivieren (true/false, Standard: true)")
 	adminPw := fs.String("admin-password", "", "Optionales Admin-Passwort im Modus --auth=false")
+	tlsAuto := fs.Bool("tls-auto", false, "Automatisch selbstsigniertes lokales HTTPS-Zertifikat erzeugen und nutzen")
 	tlsCert := fs.String("tls-cert", "", "Pfad zum TLS-Zertifikat (PEM)")
 	tlsKey := fs.String("tls-key", "", "Pfad zum privaten TLS-Schlüssel (PEM)")
 
@@ -78,6 +80,9 @@ func parseConfigFlags(args []string) (config.Config, error) {
 	}
 	if *adminPw != "" {
 		cfg.AdminPassword = *adminPw
+	}
+	if *tlsAuto {
+		cfg.TLSAuto = true
 	}
 	if *tlsCert != "" {
 		cfg.TLSCert = *tlsCert
@@ -167,11 +172,23 @@ func startServer(ctx context.Context, cfg config.Config) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	certFile, keyFile := cfg.TLSCert, cfg.TLSKey
+	if certFile == "" && cfg.TLSAuto {
+		var generated bool
+		certFile, keyFile, generated, err = tlsutil.EnsureSelfSignedCert(cfg.CertsDir())
+		if err != nil {
+			return fmt.Errorf("auto-tls zertifikat: %w", err)
+		}
+		if generated {
+			log.Printf("Selbstsigniertes LAN-Zertifikat erzeugt unter %s", certFile)
+		}
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
-		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		if certFile != "" && keyFile != "" {
 			log.Printf("it-kb (%s) gestartet auf https://%s (Daten: %s)", version, cfg.Listen, cfg.DataDir)
-			errCh <- httpServer.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+			errCh <- httpServer.ListenAndServeTLS(certFile, keyFile)
 		} else {
 			log.Printf("it-kb (%s) gestartet auf http://%s (Daten: %s)", version, cfg.Listen, cfg.DataDir)
 			errCh <- httpServer.ListenAndServe()
@@ -195,7 +212,8 @@ func runBackup(args []string) {
 	fs := flag.NewFlagSet("backup", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "Pfad zur optionalen JSON-Konfigurationsdatei")
 	dataDir := fs.String("data", "", "Datenverzeichnis")
-	out := fs.String("out", "", "Zielpfad für das Backup-ZIP")
+	out := fs.String("out", "", "Zielpfad für das Backup (.zip oder .itkb.enc bei Verschlüsselung)")
+	passphrase := fs.String("passphrase", "", "Optionale AES-256-GCM Passphrase (alternativ ITKB_BACKUP_PASSPHRASE)")
 	_ = fs.Parse(args)
 
 	cfg, err := config.Load(*cfgPath)
@@ -205,9 +223,18 @@ func runBackup(args []string) {
 	if *dataDir != "" {
 		cfg.DataDir = *dataDir
 	}
+	pw := *passphrase
+	if pw == "" {
+		pw = os.Getenv("ITKB_BACKUP_PASSPHRASE")
+	}
+
 	outPath := *out
 	if outPath == "" {
-		outPath = filepath.Join(".", fmt.Sprintf("it-kb-backup-%s.zip", time.Now().Format("20060102-150405")))
+		ext := ".zip"
+		if pw != "" {
+			ext = ".itkb.enc"
+		}
+		outPath = filepath.Join(".", fmt.Sprintf("it-kb-backup-%s%s", time.Now().Format("20060102-150405"), ext))
 	}
 
 	store, err := db.Open(cfg.DBPath())
@@ -216,8 +243,29 @@ func runBackup(args []string) {
 	}
 	defer store.Close()
 
-	if err := backup.CreateFullBackup(context.Background(), store, cfg.MediaDir(), outPath); err != nil {
+	if pw == "" {
+		if err := backup.CreateFullBackup(context.Background(), store, cfg.MediaDir(), outPath); err != nil {
+			log.Fatalf("Backup fehlgeschlagen: %v", err)
+		}
+		log.Printf("Voll-Backup erfolgreich erstellt: %s", outPath)
+		return
+	}
+
+	tmpZip := outPath + ".tmp.zip"
+	defer os.Remove(tmpZip)
+	if err := backup.CreateFullBackup(context.Background(), store, cfg.MediaDir(), tmpZip); err != nil {
 		log.Fatalf("Backup fehlgeschlagen: %v", err)
 	}
-	log.Printf("Voll-Backup erfolgreich erstellt: %s", outPath)
+	plain, err := os.ReadFile(tmpZip)
+	if err != nil {
+		log.Fatalf("Temporäres Backup lesen: %v", err)
+	}
+	enc, err := backup.EncryptBytes(plain, pw)
+	if err != nil {
+		log.Fatalf("Backup verschlüsseln: %v", err)
+	}
+	if err := os.WriteFile(outPath, enc, 0o600); err != nil {
+		log.Fatalf("Verschlüsseltes Backup schreiben: %v", err)
+	}
+	log.Printf("Verschlüsseltes Voll-Backup (AES-256-GCM) erstellt: %s", outPath)
 }

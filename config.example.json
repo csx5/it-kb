@@ -6,6 +6,7 @@
   "session_hours": 12,
   "bootstrap_admin": "",
   "bootstrap_password": "",
+  "tls_auto": false,
   "tls_cert": "",
   "tls_key": "",
   "review_reminder_days": 180,

@@ -241,9 +241,14 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 		needsReview := e.isReviewDue(doc.article)
 
 		if queryText == "" {
+			baseScore := float64(doc.article.UpdatedAt.Unix())
+			if doc.article.IsPinned {
+				// Angepinnte Dauerbrenner stehen auf der Startseite immer ganz oben
+				baseScore += 1e12
+			}
 			hits = append(hits, model.SearchHit{
 				Article:      doc.article,
-				Score:        float64(doc.article.UpdatedAt.Unix()),
+				Score:        baseScore,
 				SnippetHTML:  buildDefaultSnippet(doc.article),
 				MatchedField: "title",
 				NeedsReview:  needsReview,
@@ -296,6 +301,11 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 			continue
 		}
 
+		// Sanfter Popularitäts-Boost für nachweislich hilfreiche Lösungen
+		if doc.article.HelpfulCount > 0 {
+			totalScore += math.Log1p(float64(doc.article.HelpfulCount)) * 0.6
+		}
+
 		hits = append(hits, model.SearchHit{
 			Article:      doc.article,
 			Score:        math.Round(totalScore*100) / 100,
@@ -316,6 +326,79 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 		hits = hits[:limit]
 	}
 	return hits
+}
+
+// RelatedArticles liefert algorithmisch verwandte Artikel über gemeinsame Tags,
+// Kategorie und Token-Überlappung (komplett lokal, ohne KI).
+func (e *Engine) RelatedArticles(articleID int64, limit int) []model.Article {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 4
+	}
+	src, ok := e.docs[articleID]
+	if !ok {
+		return nil
+	}
+
+	srcTags := make(map[string]struct{}, len(src.article.Tags))
+	for _, t := range src.article.Tags {
+		srcTags[strings.ToLower(t)] = struct{}{}
+	}
+	srcKeyTerms := make(map[string]struct{})
+	for term := range src.fields[0].tf {
+		srcKeyTerms[term] = struct{}{}
+	}
+	for term := range src.fields[1].tf {
+		if len([]rune(term)) >= 4 {
+			srcKeyTerms[term] = struct{}{}
+		}
+	}
+
+	type scored struct {
+		article model.Article
+		score   float64
+	}
+	var cands []scored
+	for id, doc := range e.docs {
+		if id == articleID || doc.article.DeletedAt != nil || doc.article.Status == model.StatusDraft {
+			continue
+		}
+		var s float64
+		if src.article.CategoryID != nil && doc.article.CategoryID != nil && *src.article.CategoryID == *doc.article.CategoryID {
+			s += 2.5
+		}
+		for _, t := range doc.article.Tags {
+			if _, ok := srcTags[strings.ToLower(t)]; ok {
+				s += 3.0
+			}
+		}
+		for term := range srcKeyTerms {
+			if _, ok := doc.allTerms[term]; ok {
+				s += 1.2
+			}
+		}
+		if s >= 2.0 {
+			cands = append(cands, scored{article: doc.article, score: s})
+		}
+	}
+
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].score == cands[j].score {
+			return cands[i].article.HelpfulCount > cands[j].article.HelpfulCount
+		}
+		return cands[i].score > cands[j].score
+	})
+
+	if len(cands) > limit {
+		cands = cands[:limit]
+	}
+	out := make([]model.Article, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, c.article)
+	}
+	return out
 }
 
 func (e *Engine) fuzzyCandidatesLocked(term string) []string {

@@ -21,6 +21,7 @@ type Config struct {
 	BootstrapAdmin     string `json:"bootstrap_admin"`
 	BootstrapPassword  string `json:"bootstrap_password"`
 	AdminPassword      string `json:"admin_password"`
+	TLSAuto            bool   `json:"tls_auto"`
 	TLSCert            string `json:"tls_cert"`
 	TLSKey             string `json:"tls_key"`
 	ReviewReminderDays int    `json:"review_reminder_days"`
@@ -71,6 +72,10 @@ func (c Config) MediaDir() string {
 	return filepath.Join(c.DataDir, "media")
 }
 
+func (c Config) CertsDir() string {
+	return filepath.Join(c.DataDir, "certs")
+}
+
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Listen) == "" {
 		return errors.New("listen-adresse darf nicht leer sein")
@@ -115,6 +120,11 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("ITKB_ADMIN_PASSWORD"); v != "" {
 		cfg.AdminPassword = v
+	}
+	if v := os.Getenv("ITKB_TLS_AUTO"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.TLSAuto = b
+		}
 	}
 	if v := os.Getenv("ITKB_TLS_CERT"); v != "" {
 		cfg.TLSCert = v

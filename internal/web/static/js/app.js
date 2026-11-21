@@ -1,8 +1,10 @@
 import { createImageEditorController } from "/js/editor-canvas.js";
 import { createAdminAndHistoryController } from "/js/admin-ui.js";
+import { scanForSensitiveData } from "/js/pii-scanner.js";
 
 const THEME_KEY = "itkb_theme";
 const AUTHOR_KEY = "itkb_author";
+const HELPFUL_KEY = "itkb_helpful_ids";
 
 const imageEditor = createImageEditorController();
 
@@ -13,6 +15,8 @@ const els = {
   authLoginForm: document.getElementById("auth-login-form"),
   loginUsername: document.getElementById("login-username"),
   loginPassword: document.getElementById("login-password"),
+  loginTotpWrap: document.getElementById("login-totp-wrap"),
+  loginTotpCode: document.getElementById("login-totp-code"),
   loginError: document.getElementById("login-error"),
   authSetupForm: document.getElementById("auth-setup-form"),
   setupUsername: document.getElementById("setup-username"),
@@ -39,6 +43,18 @@ const els = {
   pwNew: document.getElementById("pw-new"),
   pwConfirm: document.getElementById("pw-confirm"),
   btnPwCancel: document.getElementById("btn-pw-cancel"),
+  totpStatusText: document.getElementById("totp-status-text"),
+  totpSetupArea: document.getElementById("totp-setup-area"),
+  totpSecretCode: document.getElementById("totp-secret-code"),
+  btnTotpCopy: document.getElementById("btn-totp-copy"),
+  totpConfirmCode: document.getElementById("totp-confirm-code"),
+  btnTotpConfirm: document.getElementById("btn-totp-confirm"),
+  btnTotpStart: document.getElementById("btn-totp-start"),
+  btnTotpDisable: document.getElementById("btn-totp-disable"),
+  piiDialog: document.getElementById("pii-dialog"),
+  piiFindingsList: document.getElementById("pii-findings-list"),
+  btnPiiCancel: document.getElementById("btn-pii-cancel"),
+  btnPiiProceed: document.getElementById("btn-pii-proceed"),
   themeToggle: document.getElementById("theme-toggle"),
   searchPanel: document.getElementById("search-panel"),
   searchInput: document.getElementById("search-input"),
@@ -301,6 +317,12 @@ function renderResults(hits) {
 
     const badges = document.createElement("div");
     badges.className = "hit-badges";
+    if (a.is_pinned) {
+      badges.appendChild(makeBadge("Angepinnt", "badge-pin"));
+    }
+    if (a.helpful_count > 0) {
+      badges.appendChild(makeBadge(`Hilfreich: ${a.helpful_count}`, "badge-ok"));
+    }
     if (a.deleted_at) {
       badges.appendChild(makeBadge("Papierkorb", "badge-danger"));
     }
@@ -364,6 +386,24 @@ async function openArticle(id) {
   actions.className = "detail-actions";
 
   if (!a.deleted_at) {
+    const helpfulBtn = document.createElement("button");
+    helpfulBtn.type = "button";
+    helpfulBtn.className = "btn";
+    const alreadyHelpful = getHelpfulSet().has(a.id);
+    helpfulBtn.textContent = alreadyHelpful
+      ? `Hilfreich (${a.helpful_count})`
+      : `Hat geholfen (${a.helpful_count})`;
+    helpfulBtn.disabled = alreadyHelpful;
+    helpfulBtn.addEventListener("click", () => markHelpful(a.id));
+    actions.appendChild(helpfulBtn);
+
+    const printBtn = document.createElement("button");
+    printBtn.type = "button";
+    printBtn.className = "btn";
+    printBtn.textContent = "Drucken / PDF";
+    printBtn.addEventListener("click", () => window.print());
+    actions.appendChild(printBtn);
+
     const historyBtn = document.createElement("button");
     historyBtn.type = "button";
     historyBtn.className = "btn";
@@ -372,6 +412,12 @@ async function openArticle(id) {
     actions.appendChild(historyBtn);
 
     if (canEdit()) {
+      const pinBtn = document.createElement("button");
+      pinBtn.type = "button";
+      pinBtn.className = "btn";
+      pinBtn.textContent = a.is_pinned ? "Lösen" : "Anpinnen";
+      pinBtn.addEventListener("click", () => togglePin(a.id, !a.is_pinned));
+
       const verifyBtn = document.createElement("button");
       verifyBtn.type = "button";
       verifyBtn.className = "btn";
@@ -390,7 +436,7 @@ async function openArticle(id) {
       delBtn.textContent = "In Papierkorb";
       delBtn.addEventListener("click", () => softDeleteArticle(a.id));
 
-      actions.append(verifyBtn, editBtn, delBtn);
+      actions.append(pinBtn, verifyBtn, editBtn, delBtn);
     }
   } else {
     if (canEdit()) {
@@ -468,6 +514,155 @@ async function openArticle(id) {
 
   attachCodeCopyButtons(els.articleDetail);
   attachImageLightbox(els.articleDetail);
+
+  // Ähnliche Artikel (rein algorithmisch)
+  if (Array.isArray(body.related_articles) && body.related_articles.length > 0) {
+    const relSec = document.createElement("section");
+    relSec.className = "related-section";
+    const relTitle = document.createElement("div");
+    relTitle.className = "detail-section-label";
+    relTitle.textContent = "Ähnliche Artikel";
+    const grid = document.createElement("div");
+    grid.className = "related-grid";
+    for (const rel of body.related_articles) {
+      const card = document.createElement("div");
+      card.className = "related-card";
+      card.addEventListener("click", () => openArticle(rel.id));
+      card.innerHTML = `
+        <div class="related-card-title">${escapeText(rel.title)}</div>
+        <div class="hit-badges">
+          <span class="badge">${escapeText(rel.category_name || "Ohne Kategorie")}</span>
+          ${rel.error_codes ? `<span class="badge badge-code">${escapeText(rel.error_codes)}</span>` : ""}
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+    relSec.append(relTitle, grid);
+    els.articleDetail.appendChild(relSec);
+  }
+
+  // Praxis-Hinweise & Kommentare
+  if (!a.deleted_at) {
+    renderCommentsSection(a.id, body.comments || []);
+  }
+}
+
+function getHelpfulSet() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(HELPFUL_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+async function markHelpful(id) {
+  const { ok } = await apiRequest(`/api/articles/${id}/helpful`, { method: "POST", body: "{}" });
+  if (!ok) {
+    showToast("Aktion fehlgeschlagen");
+    return;
+  }
+  const set = getHelpfulSet();
+  set.add(id);
+  localStorage.setItem(HELPFUL_KEY, JSON.stringify([...set]));
+  showToast("Danke für die Rückmeldung");
+  await openArticle(id);
+}
+
+async function togglePin(id, pinned) {
+  const { ok } = await apiRequest(`/api/articles/${id}/pin`, {
+    method: "POST",
+    body: JSON.stringify({ pinned }),
+  });
+  if (!ok) {
+    showToast("Pin-Status konnte nicht geändert werden");
+    return;
+  }
+  showToast(pinned ? "Artikel oben angepinnt" : "Anpinnen aufgehoben");
+  await openArticle(id);
+}
+
+function renderCommentsSection(articleId, comments) {
+  const sec = document.createElement("section");
+  sec.className = "comments-section";
+
+  const lbl = document.createElement("div");
+  lbl.className = "detail-section-label";
+  lbl.textContent = `Praxis-Hinweise & Kommentare (${comments.length})`;
+  sec.appendChild(lbl);
+
+  const list = document.createElement("div");
+  list.className = "comments-list";
+  if (comments.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hit-snippet";
+    empty.textContent = "Noch keine Praxis-Hinweise vorhanden.";
+    list.appendChild(empty);
+  } else {
+    for (const c of comments) {
+      const card = document.createElement("div");
+      card.className = "comment-card";
+      const meta = document.createElement("div");
+      meta.className = "comment-meta";
+      const left = document.createElement("span");
+      left.textContent = `${c.author_name || "Unbekannt"} · ${new Date(c.created_at).toLocaleString("de-DE")}`;
+      meta.appendChild(left);
+
+      const canDelete = !state.authRequired || isAdmin() || (state.user && c.author_user_id === state.user.id);
+      if (canDelete) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "btn btn-sm";
+        del.textContent = "Entfernen";
+        del.addEventListener("click", async () => {
+          if (!confirm("Hinweis wirklich entfernen?")) return;
+          const res = await apiRequest(`/api/articles/${articleId}/comments/${c.id}`, { method: "DELETE" });
+          if (res.ok) {
+            showToast("Hinweis entfernt");
+            openArticle(articleId);
+          }
+        });
+        meta.appendChild(del);
+      }
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "comment-body";
+      bodyEl.textContent = c.body;
+      card.append(meta, bodyEl);
+      list.appendChild(card);
+    }
+  }
+  sec.appendChild(list);
+
+  const form = document.createElement("form");
+  form.className = "comments-form";
+  const ta = document.createElement("textarea");
+  ta.rows = 3;
+  ta.placeholder = "Kurzer Praxis-Hinweis (z. B. „Gilt auch unter Windows 11 24H2“ oder zusätzlicher Workaround) …";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "btn";
+  submit.style.alignSelf = "flex-start";
+  submit.textContent = "Hinweis hinzufügen";
+  form.append(ta, submit);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = ta.value.trim();
+    if (!text) return;
+    const res = await apiRequest(`/api/articles/${articleId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body: text, author_name: getAuthor() }),
+    });
+    if (!res.ok) {
+      showToast(res.body?.error || "Hinweis konnte nicht gespeichert werden");
+      return;
+    }
+    showToast("Hinweis hinzugefügt");
+    await openArticle(articleId);
+  });
+
+  sec.appendChild(form);
+  els.articleDetail.appendChild(sec);
 }
 
 function attachImageLightbox(container) {
@@ -700,12 +895,26 @@ function buildEditorPayload(force = false) {
   };
 }
 
-async function saveEditor(force = false) {
+async function saveEditor(force = false, skipPIICheck = false) {
   const payload = buildEditorPayload(force);
   if (!payload.title) {
     showToast("Bitte einen Titel eingeben");
     els.edTitle.focus();
     return;
+  }
+
+  // Lokaler Sensible-Daten-Warner (E-Mails, Klartext-Passwörter, Keys, IBANs, interne IPs)
+  if (!skipPIICheck) {
+    const findings = scanForSensitiveData([
+      { label: "Titel", value: payload.title },
+      { label: "Fehlercodes", value: payload.error_codes },
+      { label: "Symptome / Ursache", value: payload.symptoms },
+      { label: "Lösung / Inhalt", value: payload.solution_body },
+    ]);
+    if (findings.length > 0) {
+      const proceed = await confirmPIIDialog(findings);
+      if (!proceed) return;
+    }
   }
 
   const isUpdate = state.editingArticleId !== null;
@@ -962,7 +1171,7 @@ function bindEvents() {
   });
   els.btnConflictForce.addEventListener("click", () => {
     els.conflictDialog.close();
-    saveEditor(true);
+    saveEditor(true, true);
   });
 
   // Suche & Filter
@@ -1009,6 +1218,42 @@ const adminUI = createAdminAndHistoryController({
   showToast,
 });
 
+function confirmPIIDialog(findings) {
+  els.piiFindingsList.innerHTML = "";
+  for (const f of findings) {
+    const row = document.createElement("div");
+    row.className = "pii-item";
+    row.innerHTML = `
+      <span><strong>${escapeText(f.category)}</strong> im Feld <em>${escapeText(f.field)}</em></span>
+      <code>${escapeText(f.sample)}</code>
+    `;
+    els.piiFindingsList.appendChild(row);
+  }
+  els.piiDialog.showModal();
+  return new Promise((resolve) => {
+    const cleanup = (val) => {
+      els.btnPiiCancel.removeEventListener("click", onCancel);
+      els.btnPiiProceed.removeEventListener("click", onProceed);
+      els.piiDialog.close();
+      resolve(val);
+    };
+    const onCancel = () => cleanup(false);
+    const onProceed = () => cleanup(true);
+    els.btnPiiCancel.addEventListener("click", onCancel);
+    els.btnPiiProceed.addEventListener("click", onProceed);
+  });
+}
+
+function updateTOTPDialogState() {
+  const enabled = Boolean(state.user && state.user.totp_enabled);
+  els.totpStatusText.textContent = enabled
+    ? "2FA (TOTP) ist für Ihr Konto aktiv."
+    : "2FA ist derzeit nicht aktiviert. Empfohlen besonders für Administrator-Konten.";
+  els.totpSetupArea.classList.add("hidden");
+  els.btnTotpStart.classList.toggle("hidden", enabled);
+  els.btnTotpDisable.classList.toggle("hidden", !enabled);
+}
+
 function bindAuthEvents() {
   els.authLoginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1018,17 +1263,30 @@ function bindAuthEvents() {
       body: JSON.stringify({
         username: els.loginUsername.value.trim(),
         password: els.loginPassword.value,
+        totp_code: els.loginTotpCode.value.trim(),
       }),
     });
+    if (ok && body?.totp_required) {
+      els.loginTotpWrap.classList.remove("hidden");
+      els.loginTotpCode.focus();
+      return;
+    }
     if (!ok || !body?.user) {
       els.loginError.textContent = body?.error || "Anmeldung fehlgeschlagen";
       els.loginError.classList.remove("hidden");
-      els.loginPassword.value = "";
-      els.loginPassword.focus();
+      if (els.loginTotpWrap.classList.contains("hidden")) {
+        els.loginPassword.value = "";
+        els.loginPassword.focus();
+      } else {
+        els.loginTotpCode.value = "";
+        els.loginTotpCode.focus();
+      }
       return;
     }
     state.user = body.user;
     els.loginPassword.value = "";
+    els.loginTotpCode.value = "";
+    els.loginTotpWrap.classList.add("hidden");
     showAppShell();
     await loadMeta();
     await runSearch();
@@ -1078,10 +1336,60 @@ function bindAuthEvents() {
     els.pwCurrent.value = "";
     els.pwNew.value = "";
     els.pwConfirm.value = "";
+    els.totpConfirmCode.value = "";
+    updateTOTPDialogState();
     els.passwordDialog.showModal();
     els.pwCurrent.focus();
   });
   els.btnPwCancel.addEventListener("click", () => els.passwordDialog.close());
+
+  els.btnTotpStart.addEventListener("click", async () => {
+    const { ok, body } = await apiRequest("/api/auth/totp/setup", { method: "POST", body: "{}" });
+    if (!ok || !body?.secret) {
+      showToast(body?.error || "2FA-Start fehlgeschlagen");
+      return;
+    }
+    els.totpSecretCode.textContent = body.secret;
+    els.totpSetupArea.classList.remove("hidden");
+    els.btnTotpStart.classList.add("hidden");
+    els.totpConfirmCode.focus();
+  });
+
+  els.btnTotpCopy.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(els.totpSecretCode.textContent || "");
+    showToast("2FA-Schlüssel kopiert");
+  });
+
+  els.btnTotpConfirm.addEventListener("click", async () => {
+    const code = els.totpConfirmCode.value.trim();
+    const { ok, body } = await apiRequest("/api/auth/totp/enable", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+    if (!ok) {
+      showToast(body?.error || "2FA-Code ungültig");
+      return;
+    }
+    if (state.user) state.user.totp_enabled = true;
+    updateTOTPDialogState();
+    showToast("2FA (TOTP) erfolgreich aktiviert");
+  });
+
+  els.btnTotpDisable.addEventListener("click", async () => {
+    const pw = prompt("Aktuelles Passwort zum Deaktivieren von 2FA eingeben:");
+    if (!pw) return;
+    const { ok, body } = await apiRequest("/api/auth/totp/disable", {
+      method: "POST",
+      body: JSON.stringify({ current_password: pw }),
+    });
+    if (!ok) {
+      showToast(body?.error || "2FA konnte nicht deaktiviert werden");
+      return;
+    }
+    if (state.user) state.user.totp_enabled = false;
+    updateTOTPDialogState();
+    showToast("2FA deaktiviert");
+  });
   els.changePwForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (els.pwNew.value !== els.pwConfirm.value) {

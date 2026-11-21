@@ -243,6 +243,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   const btnBackupFull = document.getElementById("btn-backup-full");
   const btnRestoreBackup = document.getElementById("btn-restore-backup");
   const restoreBackupInput = document.getElementById("restore-backup-input");
+  const backupPassphraseInput = document.getElementById("backup-passphrase");
 
   function adminHeaders() {
     const pw = (adminPwInput.value || "").trim();
@@ -358,6 +359,23 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
         loadAuditUI();
       });
 
+      const totpBtn = document.createElement("button");
+      totpBtn.type = "button";
+      totpBtn.className = "btn btn-sm";
+      totpBtn.textContent = u.totp_enabled ? "2FA zurücksetzen" : "2FA aus";
+      totpBtn.disabled = !u.totp_enabled;
+      totpBtn.addEventListener("click", async () => {
+        if (!confirm(`2FA (TOTP) für „${u.username}“ zurücksetzen?`)) return;
+        const res = await apiRequest(`/api/admin/users/${u.id}/totp-reset`, { method: "POST" });
+        if (!res.ok) {
+          showToast(res.body?.error || "2FA-Reset fehlgeschlagen");
+          return;
+        }
+        showToast(`2FA für „${u.username}“ zurückgesetzt`);
+        loadUsersUI();
+        loadAuditUI();
+      });
+
       const delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.className = "btn btn-sm btn-danger";
@@ -375,7 +393,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
         loadAuditUI();
       });
 
-      row.append(uname, disp, roleSel, activeLabel, saveBtn, resetBtn, delBtn);
+      row.append(uname, disp, roleSel, activeLabel, saveBtn, resetBtn, totpBtn, delBtn);
       usersList.appendChild(row);
     }
   }
@@ -619,8 +637,17 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   btnBackupFull.addEventListener("click", async (e) => {
     e.preventDefault();
     try {
-      showToast("Voll-Backup wird erstellt …");
-      const res = await fetch("/api/backup/full", { headers: adminHeaders() });
+      const pass = (backupPassphraseInput.value || "").trim();
+      const headers = adminHeaders();
+      if (pass) {
+        if (pass.length < 8) {
+          showToast("Backup-Passphrase muss mindestens 8 Zeichen lang sein");
+          return;
+        }
+        headers["X-Backup-Passphrase"] = pass;
+      }
+      showToast(pass ? "Verschlüsseltes Voll-Backup wird erstellt …" : "Voll-Backup wird erstellt …");
+      const res = await fetch("/api/backup/full", { headers });
       if (!res.ok) {
         let msg = `Backup fehlgeschlagen (HTTP ${res.status})`;
         try {
@@ -635,12 +662,12 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       const a = document.createElement("a");
       a.href = url;
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-      a.download = `it-kb-vollbackup-${stamp}.zip`;
+      a.download = pass ? `it-kb-vollbackup-${stamp}.itkb.enc` : `it-kb-vollbackup-${stamp}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      showToast("Voll-Backup heruntergeladen");
+      showToast(pass ? "Verschlüsseltes Voll-Backup heruntergeladen" : "Voll-Backup heruntergeladen");
     } catch {
       showToast("Voll-Backup fehlgeschlagen");
     }
@@ -654,8 +681,13 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     if (!confirm(`Voll-Backup „${file.name}“ wirklich einspielen? Der aktuelle Datenbank- und Medienstand wird vollständig ersetzt.`)) {
       return;
     }
+    let pass = (backupPassphraseInput.value || "").trim();
+    if (!pass && file.name.endsWith(".enc")) {
+      pass = prompt("Backup-Passphrase zum Entschlüsseln eingeben:") || "";
+    }
     const fd = new FormData();
     fd.append("file", file, file.name);
+    if (pass) fd.append("passphrase", pass);
     showToast("Backup wird wiederhergestellt …");
     const res = await fetch("/api/backup/restore", {
       method: "POST",

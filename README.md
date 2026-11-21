@@ -9,7 +9,9 @@ Eigenständige, 100 % lokale Wissensdatenbank für IT-Teams als einzelnes Go-Bin
 - **IT-Such-Engine:** Eigene In-Memory-Engine mit BM25-Feldgewichtung (`Fehlercode > Titel > Tags > Symptome > Lösung`), Exakt-Boost für Fehlercodes/Registry-Pfade/Dateinamen, Trigramm-Tippfehler-Toleranz und im UI pflegbaren Team-Synonymen.
 - **Screenshot-Workflow:** Einfügen per `Strg+V` über einen integrierten Canvas-Bildeditor (Rahmen, Pfeil, Schwärzen/Verpixeln) mit clientseitiger Komprimierung.
 - **Struktur & Versionierung:** Vorlagen (*Problem & Lösung*, *How-To*), Versionshistorie mit Diff & Restore, Konflikterkennung, Aktualitätsprüfung und Papierkorb.
-- **Sichere Authentifizierung & Admin-Konsole:** Standardmäßig geschützt per Benutzer-Login (Argon2id-Passwort-Hashing, 256-Bit-`HttpOnly`-Sessions als SHA-256-Hash in SQLite, Brute-Force-Rate-Limiting, CSRF-Schutz, Fail-Closed für API/Medien/Exporte). Drei Rollen (*Administrator*, *Bearbeiter*, *Leser*), geführte Ersteinrichtung im Browser und Sicherheits-Audit-Log.
+- **Sichere Authentifizierung & Admin-Konsole:** Standardmäßig geschützt per Benutzer-Login (Argon2id-Passwort-Hashing, optionales 2FA per TOTP-Authenticator-App, 256-Bit-`HttpOnly`-Sessions als SHA-256-Hash in SQLite, Brute-Force-Rate-Limiting, CSRF-Schutz, Fail-Closed für API/Medien/Exporte). Drei Rollen (*Administrator*, *Bearbeiter*, *Leser*), geführte Ersteinrichtung im Browser und Sicherheits-Audit-Log.
+- **Datenschutz & HTTPS im LAN:** 1-Flag-HTTPS (`--tls-auto` erzeugt lokal ein selbstsigniertes ECDSA-Zertifikat inkl. LAN-IPs), lokaler Sensible-Daten-Warner im Editor vor dem Speichern und optional AES-256-GCM-verschlüsselte Voll-Backups (`.itkb.enc`).
+- **IT-Support-Alltag:** „Hat geholfen“-Zähler, angepinnte Dauerbrenner, Praxis-Kommentare unter Artikeln, algorithmisch ermittelte „Ähnliche Artikel“ und saubere Druck-/PDF-Ansicht (`@media print`).
 - **Kein Vendor-Lock-in:** Portabler Markdown-Export (ZIP) sowie konsistentes SQLite-Voll-Backup inkl. Medien.
 
 ## Schnellstart (Lokal)
@@ -37,6 +39,7 @@ Reihenfolge der Priorität: `CLI-Flags > Umgebungsvariablen (ITKB_*) > config.js
 | `session_hours` | – | `ITKB_SESSION_HOURS` | `12` |
 | `bootstrap_admin` | – | `ITKB_BOOTSTRAP_ADMIN` | _(leer = Ersteinrichtung im Browser)_ |
 | `bootstrap_password` | – | `ITKB_BOOTSTRAP_PASSWORD` | _(leer)_ |
+| `tls_auto` | `--tls-auto` | `ITKB_TLS_AUTO` | `false` |
 | `tls_cert` | `--tls-cert` | `ITKB_TLS_CERT` | _(leer = HTTP)_ |
 | `tls_key` | `--tls-key` | `ITKB_TLS_KEY` | _(leer = HTTP)_ |
 
