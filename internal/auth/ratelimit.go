@@ -11,13 +11,14 @@ type attemptRecord struct {
 	lockedTil time.Time
 }
 
-// LoginRateLimiter schützt den Login-Endpunkt vor Brute-Force-Angriffen pro Schlüssel (IP / Benutzername).
+// LoginRateLimiter schützt Auth-Endpunkte vor Brute-Force-Angriffen mit automatischem Pruning.
 type LoginRateLimiter struct {
 	mu          sync.Mutex
 	records     map[string]*attemptRecord
 	maxFailures int
 	window      time.Duration
 	lockout     time.Duration
+	ops         int
 }
 
 func NewLoginRateLimiter(maxFailures int, window, lockout time.Duration) *LoginRateLimiter {
@@ -29,12 +30,13 @@ func NewLoginRateLimiter(maxFailures int, window, lockout time.Duration) *LoginR
 	}
 }
 
-// Allow prüft, ob ein Login-Versuch zulässig ist, und liefert ggf. die verbleibende Sperrdauer.
 func (l *LoginRateLimiter) Allow(key string) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	now := time.Now()
+	l.maybePruneLocked(now)
+
 	rec, ok := l.records[key]
 	if !ok {
 		return true, 0
@@ -54,6 +56,8 @@ func (l *LoginRateLimiter) RecordFailure(key string) {
 	defer l.mu.Unlock()
 
 	now := time.Now()
+	l.maybePruneLocked(now)
+
 	rec, ok := l.records[key]
 	if !ok || now.After(rec.windowEnd) {
 		rec = &attemptRecord{
@@ -72,4 +76,16 @@ func (l *LoginRateLimiter) Reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.records, key)
+}
+
+func (l *LoginRateLimiter) maybePruneLocked(now time.Time) {
+	l.ops++
+	if l.ops%256 != 0 && len(l.records) < 4096 {
+		return
+	}
+	for k, rec := range l.records {
+		if now.After(rec.windowEnd) && (rec.lockedTil.IsZero() || now.After(rec.lockedTil)) {
+			delete(l.records, k)
+		}
+	}
 }

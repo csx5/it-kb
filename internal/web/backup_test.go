@@ -20,7 +20,6 @@ func TestBackupExportRestoreAndZipSlipRejection(t *testing.T) {
 	cfg.DataDir = t.TempDir()
 	cfg.AuthRequired = false
 	cfg.AdminPassword = "secret"
-	cfg.SeedDemoArticles = true
 
 	store, err := db.Open(cfg.DBPath())
 	if err != nil {
@@ -28,9 +27,16 @@ func TestBackupExportRestoreAndZipSlipRejection(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(context.Background(), true); err != nil {
+	if err := store.SeedInitialData(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	_, _ = store.CreateArticle(context.Background(), db.CreateArticleInput{
+		TemplateType: "howto",
+		Title:        "Test-Eintrag",
+		Status:       "active",
+		SolutionBody: "Inhalt",
+		AuthorName:   "MK",
+	})
 	articles, _ := store.ListAllArticles(context.Background())
 	syns, _ := store.ListSynonymGroups(context.Background())
 	eng := search.NewEngine(180)

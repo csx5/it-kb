@@ -168,13 +168,14 @@ function initAuthor() {
 }
 
 async function apiRequest(url, options = {}) {
+  const { headers, ...rest } = options;
   const res = await fetch(url, {
+    ...rest,
     headers: {
       "Content-Type": "application/json",
       "X-Requested-With": "it-kb",
-      ...(options.headers || {}),
+      ...(headers || {}),
     },
-    ...options,
   });
   let body = null;
   try {
@@ -1001,13 +1002,15 @@ function stopLockHeartbeat() {
   }
   if (state.editingArticleId !== null) {
     const id = state.editingArticleId;
+    state.editingArticleId = null;
     const editor = encodeURIComponent(getAuthor());
-    fetch(`/api/articles/${id}/lock?editor=${editor}`, {
+    return fetch(`/api/articles/${id}/lock?editor=${editor}`, {
       method: "DELETE",
       headers: { "X-Requested-With": "it-kb" },
       keepalive: true,
     }).catch(() => {});
   }
+  return Promise.resolve();
 }
 
 async function refreshPreview() {
@@ -1065,6 +1068,24 @@ function applyMarkdownAction(action) {
   schedulePreview();
 }
 
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) {
+    throw new Error("Kopieren nicht möglich");
+  }
+}
+
 function attachCodeCopyButtons(container) {
   for (const pre of container.querySelectorAll("pre")) {
     const code = pre.querySelector("code");
@@ -1074,9 +1095,13 @@ function attachCodeCopyButtons(container) {
     btn.className = "code-copy-btn";
     btn.textContent = "Kopieren";
     btn.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(rawText);
-      btn.textContent = "Kopiert";
-      setTimeout(() => (btn.textContent = "Kopieren"), 1500);
+      try {
+        await copyTextToClipboard(rawText);
+        btn.textContent = "Kopiert";
+        setTimeout(() => (btn.textContent = "Kopieren"), 1500);
+      } catch {
+        showToast("Kopieren fehlgeschlagen");
+      }
     });
     pre.appendChild(btn);
   }
@@ -1113,10 +1138,9 @@ function bindEvents() {
     showView("list");
     runSearch();
   });
-  els.btnEditorCancel.addEventListener("click", () => {
+  els.btnEditorCancel.addEventListener("click", async () => {
     const backId = state.editingArticleId;
-    stopLockHeartbeat();
-    state.editingArticleId = null;
+    await stopLockHeartbeat();
     if (backId) {
       openArticle(backId);
     } else {
@@ -1135,9 +1159,9 @@ function bindEvents() {
   els.edSymptoms.addEventListener("focus", () => (state.lastFocusedTextarea = els.edSymptoms));
   els.edSolution.addEventListener("focus", () => (state.lastFocusedTextarea = els.edSolution));
 
-  for (const btn of document.querySelectorAll(".seg-btn")) {
+  for (const btn of document.querySelectorAll(".seg-btn[data-view]")) {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".seg-btn[data-view]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       els.editorPanes.className = `editor-panes view-${btn.dataset.view}`;
       if (btn.dataset.view !== "write") refreshPreview();
@@ -1363,8 +1387,12 @@ function bindAuthEvents() {
   });
 
   els.btnTotpCopy.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(els.totpSecretCode.textContent || "");
-    showToast("2FA-Schlüssel kopiert");
+    try {
+      await copyTextToClipboard(els.totpSecretCode.textContent || "");
+      showToast("2FA-Schlüssel kopiert");
+    } catch {
+      showToast("Kopieren fehlgeschlagen");
+    }
   });
 
   els.btnTotpConfirm.addEventListener("click", async () => {

@@ -102,6 +102,9 @@ export function createImageEditorController() {
 
   function pointerPos(e) {
     const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || canvas.width <= 0 || canvas.height <= 0) {
+      return { x: 0, y: 0 };
+    }
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return {

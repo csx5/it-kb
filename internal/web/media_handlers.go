@@ -103,12 +103,16 @@ func (s *Server) handleServeMedia(w http.ResponseWriter, r *http.Request) {
 
 	safeName := sanitizeDownloadName(m.OriginalName)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 
 	if m.Kind == model.MediaKindAttachment {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeName))
 	} else {
+		if m.MimeType != "" {
+			w.Header().Set("Content-Type", m.MimeType)
+		}
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, safeName))
 	}
 

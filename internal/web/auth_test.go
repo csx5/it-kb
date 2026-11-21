@@ -19,7 +19,6 @@ func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.AuthRequired = true
-	cfg.SeedDemoArticles = true
 
 	store, err := db.Open(cfg.DBPath())
 	if err != nil {
@@ -27,9 +26,17 @@ func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(context.Background(), true); err != nil {
+	if err := store.SeedInitialData(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	_, _ = store.CreateArticle(context.Background(), db.CreateArticleInput{
+		TemplateType: "problem_solution",
+		Title:        "Test-Fehler",
+		Status:       "active",
+		ErrorCodes:   "0x8004010F",
+		SolutionBody: "Test-Lösung",
+		AuthorName:   "System",
+	})
 	articles, _ := store.ListAllArticles(context.Background())
 	syns, _ := store.ListSynonymGroups(context.Background())
 	eng := search.NewEngine(180)

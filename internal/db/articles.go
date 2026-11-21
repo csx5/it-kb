@@ -28,6 +28,7 @@ type CreateArticleInput struct {
 	SolutionBody string
 	Tags         []string
 	AuthorName   string
+	AuthorUserID *int64
 }
 
 type UpdateArticleInput struct {
@@ -42,6 +43,7 @@ type UpdateArticleInput struct {
 	SolutionBody    string
 	Tags            []string
 	EditorName      string
+	EditorUserID    *int64
 	ChangeSummary   string
 }
 
@@ -80,12 +82,12 @@ func (s *Store) CreateArticle(ctx context.Context, in CreateArticleInput) (model
 		INSERT INTO articles (
 			slug, template_type, title, category_id, status,
 			error_codes, symptoms, solution_body, tags_json,
-			author_name, version, last_verified_at, last_verified_by,
+			author_name, author_user_id, version, last_verified_at, last_verified_by,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
 	`, slug, in.TemplateType, in.Title, nullableInt64(in.CategoryID), in.Status,
 		strings.TrimSpace(in.ErrorCodes), in.Symptoms, in.SolutionBody, string(tagsJSON),
-		author, now, author, now, now)
+		author, nullableInt64(in.AuthorUserID), now, author, now, now)
 	if err != nil {
 		return model.Article{}, fmt.Errorf("artikel anlegen: %w", err)
 	}
@@ -98,11 +100,11 @@ func (s *Store) CreateArticle(ctx context.Context, in CreateArticleInput) (model
 		INSERT INTO article_revisions (
 			article_id, version, template_type, title, category_id, status,
 			error_codes, symptoms, solution_body, tags_json,
-			editor_name, change_summary, created_at
-		) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Erstellt', ?)
+			editor_name, editor_user_id, change_summary, created_at
+		) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Erstellt', ?)
 	`, id, in.TemplateType, in.Title, nullableInt64(in.CategoryID), in.Status,
 		strings.TrimSpace(in.ErrorCodes), in.Symptoms, in.SolutionBody, string(tagsJSON),
-		author, now); err != nil {
+		author, nullableInt64(in.AuthorUserID), now); err != nil {
 		return model.Article{}, fmt.Errorf("erste revision anlegen: %w", err)
 	}
 
@@ -180,11 +182,11 @@ func (s *Store) UpdateArticle(ctx context.Context, id int64, in UpdateArticleInp
 		INSERT INTO article_revisions (
 			article_id, version, template_type, title, category_id, status,
 			error_codes, symptoms, solution_body, tags_json,
-			editor_name, change_summary, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			editor_name, editor_user_id, change_summary, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, id, nextVersion, in.TemplateType, in.Title, nullableInt64(in.CategoryID), in.Status,
 		strings.TrimSpace(in.ErrorCodes), in.Symptoms, in.SolutionBody, string(tagsJSON),
-		editor, summary, now); err != nil {
+		editor, nullableInt64(in.EditorUserID), summary, now); err != nil {
 		return model.Article{}, fmt.Errorf("revision anlegen: %w", err)
 	}
 

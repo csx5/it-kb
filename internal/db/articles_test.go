@@ -17,7 +17,7 @@ func TestArticleLifecycleAndOptimisticLocking(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(ctx, false); err != nil {
+	if err := store.SeedInitialData(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	cats, err := store.ListCategories(ctx)

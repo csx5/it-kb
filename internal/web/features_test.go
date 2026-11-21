@@ -23,7 +23,6 @@ func TestTOTP2FAEncryptedBackupHelpfulPinCommentsAndRelated(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.AuthRequired = true
-	cfg.SeedDemoArticles = true
 
 	store, err := db.Open(cfg.DBPath())
 	if err != nil {
@@ -31,9 +30,25 @@ func TestTOTP2FAEncryptedBackupHelpfulPinCommentsAndRelated(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(context.Background(), true); err != nil {
+	if err := store.SeedInitialData(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	_, _ = store.CreateArticle(context.Background(), db.CreateArticleInput{
+		TemplateType: "problem_solution",
+		Title:        "Artikel 1",
+		Status:       "active",
+		Tags:         []string{"netzwerk"},
+		SolutionBody: "Lösung 1",
+		AuthorName:   "System",
+	})
+	_, _ = store.CreateArticle(context.Background(), db.CreateArticleInput{
+		TemplateType: "howto",
+		Title:        "Artikel 2",
+		Status:       "active",
+		Tags:         []string{"netzwerk"},
+		SolutionBody: "Lösung 2",
+		AuthorName:   "System",
+	})
 	articles, _ := store.ListAllArticles(context.Background())
 	syns, _ := store.ListSynonymGroups(context.Background())
 	eng := search.NewEngine(180)
@@ -81,13 +96,26 @@ func TestTOTP2FAEncryptedBackupHelpfulPinCommentsAndRelated(t *testing.T) {
 		t.Fatalf("erwartete totp_required, erhalten %d %s", loginRec.Code, loginRec.Body.String())
 	}
 
-	// Login mit gültigem TOTP-Code gelingt
+	// Zweites TOTP-Setup ohne Deaktivierung muss blockiert werden (kein 2FA-Bypass!)
+	bypassRec := doAuthJSON(h, adminCookie, http.MethodPost, "/api/auth/totp/setup", `{}`)
+	if bypassRec.Code != http.StatusBadRequest {
+		t.Fatalf("totp/setup bei aktivem 2FA hätte 400 liefern müssen, erhalten %d", bypassRec.Code)
+	}
+
+	// Login mit gültigem TOTP-Code gelingt; sofortiger Replay desselben Codes muss abgelehnt werden
 	loginReq2 := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+code+`"}`))
 	loginReq2.RemoteAddr = "10.0.0.10:1234"
 	loginRec2 := httptest.NewRecorder()
 	h.ServeHTTP(loginRec2, loginReq2)
 	if loginRec2.Code != http.StatusOK {
 		t.Fatalf("totp login fehlgeschlagen: %d %s", loginRec2.Code, loginRec2.Body.String())
+	}
+	replayReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+code+`"}`))
+	replayReq.RemoteAddr = "10.0.0.10:1234"
+	replayRec := httptest.NewRecorder()
+	h.ServeHTTP(replayRec, replayReq)
+	if replayRec.Code != http.StatusUnauthorized {
+		t.Fatalf("totp-code-replay hätte 401 liefern müssen, erhalten %d", replayRec.Code)
 	}
 
 	// 3. Helpful, Pin, Kommentar & Related Articles testen

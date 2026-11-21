@@ -122,7 +122,7 @@ func startServer(ctx context.Context, cfg config.Config) error {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(ctx, cfg.SeedDemoArticles); err != nil {
+	if err := store.SeedInitialData(ctx); err != nil {
 		return fmt.Errorf("initialdaten anlegen: %w", err)
 	}
 	_ = store.CleanupExpiredSessions(ctx)

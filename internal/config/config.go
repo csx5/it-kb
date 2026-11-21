@@ -28,7 +28,6 @@ type Config struct {
 	MaxImageMB         int64  `json:"max_image_mb"`
 	MaxVideoMB         int64  `json:"max_video_mb"`
 	MaxAttachmentMB    int64  `json:"max_attachment_mb"`
-	SeedDemoArticles   bool   `json:"seed_demo_articles"`
 }
 
 func Default() Config {
@@ -42,7 +41,6 @@ func Default() Config {
 		MaxImageMB:         15,
 		MaxVideoMB:         100,
 		MaxAttachmentMB:    25,
-		SeedDemoArticles:   false,
 	}
 }
 
@@ -150,11 +148,6 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("ITKB_MAX_ATTACHMENT_MB"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
 			cfg.MaxAttachmentMB = n
-		}
-	}
-	if v := os.Getenv("ITKB_SEED_DEMO_ARTICLES"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			cfg.SeedDemoArticles = b
 		}
 	}
 }

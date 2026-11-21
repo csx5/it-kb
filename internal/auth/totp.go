@@ -59,18 +59,26 @@ func GenerateTOTPCode(secret string, at time.Time) (string, error) {
 
 // VerifyTOTPCode prüft einen 6-stelligen Code mit ±1 Zeitschritt (30s) Toleranz.
 func VerifyTOTPCode(secret, code string, now time.Time) bool {
+	ok, _ := VerifyTOTPCodeStep(secret, code, now)
+	return ok
+}
+
+// VerifyTOTPCodeStep prüft den Code und liefert zusätzlich den gematchten 30s-Zeitschritt für Replay-Schutz.
+func VerifyTOTPCodeStep(secret, code string, now time.Time) (bool, int64) {
 	code = strings.ReplaceAll(strings.TrimSpace(code), " ", "")
 	if len(code) != 6 {
-		return false
+		return false, 0
 	}
-	for _, delta := range []int64{-totpPeriodSeconds, 0, totpPeriodSeconds} {
-		expected, err := GenerateTOTPCode(secret, now.Add(time.Duration(delta)*time.Second))
+	baseStep := now.UTC().Unix() / totpPeriodSeconds
+	for _, offset := range []int64{-1, 0, 1} {
+		step := baseStep + offset
+		expected, err := GenerateTOTPCode(secret, time.Unix(step*totpPeriodSeconds, 0).UTC())
 		if err != nil {
-			return false
+			return false, 0
 		}
 		if subtle.ConstantTimeCompare([]byte(code), []byte(expected)) == 1 {
-			return true
+			return true, step
 		}
 	}
-	return false
+	return false, 0
 }

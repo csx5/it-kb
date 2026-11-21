@@ -19,7 +19,6 @@ func TestRevisionsRestoreSynonymsAndCategories(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.AuthRequired = false
-	cfg.SeedDemoArticles = false
 
 	store, err := db.Open(cfg.DBPath())
 	if err != nil {
@@ -27,7 +26,7 @@ func TestRevisionsRestoreSynonymsAndCategories(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(context.Background(), false); err != nil {
+	if err := store.SeedInitialData(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	eng := search.NewEngine(180)

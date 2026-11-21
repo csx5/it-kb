@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/csx5/it-kb/internal/db"
 	"github.com/csx5/it-kb/internal/model"
@@ -177,9 +180,12 @@ func RestoreFullBackup(ctx context.Context, r io.ReaderAt, size int64, store *db
 	var totalBytes int64
 
 	for _, f := range zr.File {
+		if strings.Contains(f.Name, `\`) {
+			return errors.New("unsicherer pfad im backup-archiv (zip-slip abgelehnt)")
+		}
 		name := filepath.ToSlash(strings.TrimPrefix(f.Name, "/"))
 		cleaned := filepath.Clean(filepath.FromSlash(name))
-		if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+		if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) || filepath.VolumeName(cleaned) != "" || strings.Contains(name, ":") {
 			return errors.New("unsicherer pfad im backup-archiv (zip-slip abgelehnt)")
 		}
 		if f.FileInfo().IsDir() {
@@ -219,20 +225,43 @@ func RestoreFullBackup(ctx context.Context, r io.ReaderAt, size int64, store *db
 		return err
 	}
 
-	// 1. Datenbank ersetzen und neu öffnen
+	// 1. Medienverzeichnis im selben Dateisystem stagen (für atomaren Tausch mit Rollback)
+	parentDir := filepath.Dir(mediaDir)
+	_ = os.MkdirAll(parentDir, 0o750)
+	nextMedia := filepath.Join(parentDir, fmt.Sprintf(".media-restore-%d", time.Now().UnixNano()))
+	if err := os.MkdirAll(nextMedia, 0o750); err != nil {
+		return fmt.Errorf("medien-staging anlegen: %w", err)
+	}
+	if _, err := os.Stat(stagedMedia); err == nil {
+		if err := copyDir(stagedMedia, nextMedia); err != nil {
+			_ = os.RemoveAll(nextMedia)
+			return fmt.Errorf("medien stagen: %w", err)
+		}
+	}
+
+	// 2. Datenbank ersetzen und neu öffnen
 	if err := store.ReplaceFromFile(stagedDB); err != nil {
+		_ = os.RemoveAll(nextMedia)
 		return fmt.Errorf("datenbank wiederherstellen: %w", err)
 	}
 
-	// 2. Medienverzeichnis ersetzen
-	_ = os.RemoveAll(mediaDir)
-	if err := os.MkdirAll(mediaDir, 0o750); err != nil {
-		return fmt.Errorf("medienordner neu anlegen: %w", err)
-	}
-	if _, err := os.Stat(stagedMedia); err == nil {
-		if err := copyDir(stagedMedia, mediaDir); err != nil {
-			return fmt.Errorf("medien wiederherstellen: %w", err)
+	// 3. Medienverzeichnis atomar tauschen
+	backupOldMedia := filepath.Join(parentDir, fmt.Sprintf(".media-prev-%d", time.Now().UnixNano()))
+	hadOld := false
+	if _, err := os.Stat(mediaDir); err == nil {
+		if err := os.Rename(mediaDir, backupOldMedia); err == nil {
+			hadOld = true
 		}
+	}
+	if err := os.Rename(nextMedia, mediaDir); err != nil {
+		if hadOld {
+			_ = os.Rename(backupOldMedia, mediaDir)
+		}
+		_ = os.RemoveAll(nextMedia)
+		return fmt.Errorf("medienverzeichnis aktivieren: %w", err)
+	}
+	if hadOld {
+		_ = os.RemoveAll(backupOldMedia)
 	}
 
 	return nil
@@ -250,13 +279,30 @@ func verifySQLiteSnapshot(ctx context.Context, path string) error {
 		return errors.New("kb.sqlite im archiv ist keine gültige sqlite-datenbank")
 	}
 
-	testStore, err := db.Open(path)
+	// Strikt read-only prüfen (kein WAL, keine Migration auf ungeprüften Daten)
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=query_only(ON)", path)
+	roDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return fmt.Errorf("snapshot-prüfung fehlgeschlagen: %w", err)
 	}
-	defer testStore.Close()
-	if _, err := testStore.ListCategories(ctx); err != nil {
+	defer roDB.Close()
+
+	// Unerwartete Trigger oder Views ablehnen
+	var badObjects int
+	if err := roDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type IN ('trigger', 'view')`).Scan(&badObjects); err != nil {
 		return fmt.Errorf("snapshot-schema ungültig: %w", err)
+	}
+	if badObjects > 0 {
+		return errors.New("snapshot enthält unerwartete datenbank-trigger oder views")
+	}
+
+	// Pflicht-Tabellen prüfen
+	required := []string{"categories", "articles", "article_revisions", "synonym_groups", "media_files", "users", "sessions"}
+	for _, tbl := range required {
+		var exists int
+		if err := roDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, tbl).Scan(&exists); err != nil || exists == 0 {
+			return fmt.Errorf("snapshot-tabelle '%s' fehlt", tbl)
+		}
 	}
 	return nil
 }

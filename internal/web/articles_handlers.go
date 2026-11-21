@@ -48,6 +48,7 @@ func (s *Server) handleCreateArticle(w http.ResponseWriter, r *http.Request) {
 		SolutionBody: p.SolutionBody,
 		Tags:         p.Tags,
 		AuthorName:   author,
+		AuthorUserID: actorUserID(r),
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -88,6 +89,7 @@ func (s *Server) handleUpdateArticle(w http.ResponseWriter, r *http.Request) {
 		SolutionBody:    p.SolutionBody,
 		Tags:            p.Tags,
 		EditorName:      editor,
+		EditorUserID:    actorUserID(r),
 		ChangeSummary:   p.ChangeSummary,
 	})
 	if err != nil {
@@ -228,8 +230,8 @@ func (s *Server) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Ungültige Artikel-ID")
 		return
 	}
-	editor := strings.TrimSpace(r.URL.Query().Get("editor"))
-	if editor != "" {
+	editor := actorName(r, r.URL.Query().Get("editor"))
+	if editor != "" && editor != "Unbekannt" {
 		s.locks.Release(id, editor)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "released"})

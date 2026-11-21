@@ -260,9 +260,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	username := strings.ToLower(strings.TrimSpace(body.Username))
 	ip := clientIP(r)
-	userKey := ip + "|" + username
 
-	if ok, wait := s.userLimiter.Allow(userKey); !ok {
+	if ok, wait := s.userLimiter.Allow(username); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		writeError(w, http.StatusTooManyRequests, fmt.Sprintf("Zu viele Fehlversuche. Bitte in %d Sekunden erneut versuchen.", int(wait.Seconds())+1))
 		return
@@ -277,7 +276,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Dummy-Argon2id-Prüfung verhindert Timing-Rückschlüsse auf existierende Benutzernamen
 		_, _ = auth.VerifyPassword(body.Password, dummyArgonHash)
-		s.userLimiter.RecordFailure(userKey)
+		s.userLimiter.RecordFailure(username)
 		s.ipLimiter.RecordFailure(ip)
 		s.store.WriteAuditLog(r.Context(), nil, username, "login_failed", username, ip, "Unbekannter Benutzer")
 		writeError(w, http.StatusUnauthorized, "Benutzername oder Passwort ungültig")
@@ -286,7 +285,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	valid, _ := auth.VerifyPassword(body.Password, userWithHash.PasswordHash)
 	if !valid || !userWithHash.IsActive {
-		s.userLimiter.RecordFailure(userKey)
+		s.userLimiter.RecordFailure(username)
 		s.ipLimiter.RecordFailure(ip)
 		reason := "Falsches Passwort"
 		if !userWithHash.IsActive {
@@ -297,25 +296,27 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optionales 2FA (TOTP) prüfen, falls für dieses Konto aktiviert
+	// Optionales 2FA (TOTP) inkl. Replay-Schutz prüfen
 	if userWithHash.TOTPEnabled {
 		if strings.TrimSpace(body.TOTPCode) == "" {
+			s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_totp_required", userWithHash.Username, ip, "2FA-Code angefordert")
 			writeJSON(w, http.StatusOK, map[string]any{
 				"totp_required": true,
 			})
 			return
 		}
-		if !auth.VerifyTOTPCode(userWithHash.TOTPSecret, body.TOTPCode, time.Now().UTC()) {
-			s.userLimiter.RecordFailure(userKey)
+		ok, step := auth.VerifyTOTPCodeStep(userWithHash.TOTPSecret, body.TOTPCode, time.Now().UTC())
+		if !ok || !s.consumeTOTPStep(userWithHash.ID, step) {
+			s.userLimiter.RecordFailure(username)
 			s.ipLimiter.RecordFailure(ip)
-			s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_failed", userWithHash.Username, ip, "Ungültiger 2FA-Code")
+			s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_failed", userWithHash.Username, ip, "Ungültiger oder bereits verwendeter 2FA-Code")
 			writeError(w, http.StatusUnauthorized, "Ungültiger 2FA-Code")
 			return
 		}
 	}
 
-	s.userLimiter.Reset(userKey)
-	s.ipLimiter.Reset(ip)
+	// Nur das Konto-Limit zurücksetzen (IP-Limit bleibt erhalten gegen Username-Spraying)
+	s.userLimiter.Reset(username)
 
 	rawToken, tokenHash, err := auth.GenerateSessionToken()
 	if err != nil {
@@ -334,6 +335,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AuthRequired && !isSameOriginCSRFValid(r) {
+		writeError(w, http.StatusForbidden, "CSRF-Prüfung fehlgeschlagen")
+		return
+	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
 		hash := auth.HashSessionToken(cookie.Value)
 		if user, err := s.store.GetSessionUser(r.Context(), hash); err == nil {
@@ -539,10 +544,29 @@ func (s *Server) handleAdminListAudit(w http.ResponseWriter, r *http.Request) {
 
 // --- Optionales 2FA (TOTP) ---
 
+func (s *Server) consumeTOTPStep(userID, step int64) bool {
+	s.totpMu.Lock()
+	defer s.totpMu.Unlock()
+	if prev, ok := s.lastTOTPStep[userID]; ok && step <= prev {
+		return false
+	}
+	s.lastTOTPStep[userID] = step
+	return true
+}
+
 func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	if u == nil {
 		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
+		return
+	}
+	full, err := s.store.GetUserByID(r.Context(), u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Benutzer nicht gefunden")
+		return
+	}
+	if full.TOTPEnabled {
+		writeError(w, http.StatusBadRequest, "2FA ist bereits aktiviert – bitte zuerst mit Passwort deaktivieren")
 		return
 	}
 	secret, err := auth.GenerateTOTPSecret()

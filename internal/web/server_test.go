@@ -21,7 +21,6 @@ func TestArticleCRUDConflictAndAdminProtection(t *testing.T) {
 	cfg.DataDir = tmp
 	cfg.AuthRequired = false
 	cfg.AdminPassword = "geheim-admin"
-	cfg.SeedDemoArticles = false
 
 	store, err := db.Open(cfg.DBPath())
 	if err != nil {
@@ -29,7 +28,7 @@ func TestArticleCRUDConflictAndAdminProtection(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(context.Background(), false); err != nil {
+	if err := store.SeedInitialData(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 

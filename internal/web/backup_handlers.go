@@ -108,13 +108,17 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 		raw = dec
 	}
 
-	if err := backup.RestoreFullBackup(r.Context(), bytes.NewReader(raw), int64(len(raw)), s.store, s.cfg.MediaDir()); err != nil {
+	s.restoreMu.Lock()
+	err = backup.RestoreFullBackup(r.Context(), bytes.NewReader(raw), int64(len(raw)), s.store, s.cfg.MediaDir())
+	if err == nil {
+		s.reloadSearchIndex(r.Context())
+	}
+	s.restoreMu.Unlock()
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "Restore fehlgeschlagen: "+err.Error())
 		return
 	}
 
-	// Suchindex nach Restore sofort neu aufbauen
-	s.reloadSearchIndex(r.Context())
 	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_restore", "full_backup", clientIP(r), "Voll-Backup eingespielt")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "restored",

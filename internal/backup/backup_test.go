@@ -27,13 +27,14 @@ func TestPortableMarkdownExportAndFullBackupRestore(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(ctx, false); err != nil {
+	if err := store.SeedInitialData(ctx); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	// Test-Screenshot ablegen
+	// Test-Screenshot mit gültigem PNG-Magic-Header ablegen
 	ms := media.NewStorage(mediaDir, media.Limits{MaxImageBytes: 5 << 20, MaxVideoBytes: 10 << 20, MaxAttachmentBytes: 5 << 20})
-	mf, err := ms.Save(strings.NewReader("fake-png-content"), "fehler.png", "MK")
+	validPNG := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R'}
+	mf, err := ms.Save(bytes.NewReader(validPNG), "fehler.png", "MK")
 	if err != nil {
 		t.Fatalf("media save: %v", err)
 	}

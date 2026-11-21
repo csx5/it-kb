@@ -19,7 +19,6 @@ func TestMediaUploadWhitelistAttachmentHeadersAndOrphanCleanup(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.AuthRequired = false
-	cfg.SeedDemoArticles = false
 
 	store, err := db.Open(cfg.DBPath())
 	if err != nil {
@@ -27,7 +26,7 @@ func TestMediaUploadWhitelistAttachmentHeadersAndOrphanCleanup(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.SeedInitialData(context.Background(), false); err != nil {
+	if err := store.SeedInitialData(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	eng := search.NewEngine(180)
@@ -37,10 +36,14 @@ func TestMediaUploadWhitelistAttachmentHeadersAndOrphanCleanup(t *testing.T) {
 	}
 	h := srv.Handler()
 
-	// 1. Nicht erlaubte Datei (.exe) muss abgelehnt werden
+	// 1. Nicht erlaubte Datei (.exe) & als .webm getarntes HTML (XSS) müssen abgelehnt werden
 	rec := uploadTestFile(t, h, "malware.exe", []byte("MZ..."))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("erwartete 400 für .exe, erhalten %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = uploadTestFile(t, h, "evil.webm", []byte("<html><script>alert(1)</script></html>"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("als .webm getarntes HTML hätte 400 liefern müssen, erhalten %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// 2. Erlaubtes IT-Skript (.ps1) hochladen

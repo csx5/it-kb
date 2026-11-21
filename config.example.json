@@ -12,6 +12,5 @@
   "review_reminder_days": 180,
   "max_image_mb": 15,
   "max_video_mb": 100,
-  "max_attachment_mb": 25,
-  "seed_demo_articles": false
+  "max_attachment_mb": 25
 }

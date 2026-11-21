@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/csx5/it-kb/internal/auth"
@@ -25,16 +26,19 @@ import (
 var staticFS embed.FS
 
 type Server struct {
-	cfg         config.Config
-	store       *db.Store
-	engine      *search.Engine
-	md          *markdown.Renderer
-	media       *media.Storage
-	locks       *LockManager
-	userLimiter *auth.LoginRateLimiter
-	ipLimiter   *auth.LoginRateLimiter
-	mux         *http.ServeMux
-	version     string
+	cfg          config.Config
+	store        *db.Store
+	engine       *search.Engine
+	md           *markdown.Renderer
+	media        *media.Storage
+	locks        *LockManager
+	userLimiter  *auth.LoginRateLimiter
+	ipLimiter    *auth.LoginRateLimiter
+	restoreMu    sync.RWMutex
+	totpMu       sync.Mutex
+	lastTOTPStep map[int64]int64
+	mux          *http.ServeMux
+	version      string
 }
 
 func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, version string) (*Server, error) {
@@ -48,11 +52,12 @@ func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, versio
 			MaxVideoBytes:      cfg.MaxVideoMB * 1024 * 1024,
 			MaxAttachmentBytes: cfg.MaxAttachmentMB * 1024 * 1024,
 		}),
-		locks:       NewLockManager(35 * time.Second),
-		userLimiter: auth.NewLoginRateLimiter(5, 5*time.Minute, 5*time.Minute),
-		ipLimiter:   auth.NewLoginRateLimiter(15, 5*time.Minute, 5*time.Minute),
-		mux:         http.NewServeMux(),
-		version:     version,
+		locks:        NewLockManager(35 * time.Second),
+		userLimiter:  auth.NewLoginRateLimiter(5, 5*time.Minute, 5*time.Minute),
+		ipLimiter:    auth.NewLoginRateLimiter(15, 5*time.Minute, 5*time.Minute),
+		lastTOTPStep: make(map[int64]int64),
+		mux:          http.NewServeMux(),
+		version:      version,
 	}
 
 	if err := s.registerRoutes(); err != nil {
@@ -62,7 +67,19 @@ func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, versio
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.securityHeaders(s.mux)
+	return s.securityHeaders(s.restoreGuard(s.mux))
+}
+
+func (s *Server) restoreGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/backup/restore" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		s.restoreMu.RLock()
+		defer s.restoreMu.RUnlock()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) registerRoutes() error {
@@ -139,21 +156,28 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "same-origin")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
 		next.ServeHTTP(w, r)
 	})
 }
 
-// RequireAdmin prüft das optionale Admin-Passwort aus der Konfiguration.
-// Ist kein Passwort konfiguriert, sind die Endpunkte im internen LAN direkt erreichbar.
+// RequireAdmin prüft das optionale Admin-Passwort im Modus --auth=false (mit Rate-Limit & Audit-Log).
 func (s *Server) RequireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.AdminPassword == "" {
 			next(w, r)
 			return
 		}
+		ip := clientIP(r)
+		if ok, wait := s.ipLimiter.Allow("adminpw|" + ip); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			writeError(w, http.StatusTooManyRequests, "Zu viele Fehlversuche")
+			return
+		}
 		provided := r.Header.Get("X-Admin-Password")
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(s.cfg.AdminPassword)) != 1 {
+			s.ipLimiter.RecordFailure("adminpw|" + ip)
+			s.store.WriteAuditLog(r.Context(), nil, "Admin-Passwort", "admin_auth_failed", r.URL.Path, ip, "Ungültiges Admin-Passwort")
 			writeError(w, http.StatusUnauthorized, "Admin-Passwort erforderlich oder ungültig")
 			return
 		}

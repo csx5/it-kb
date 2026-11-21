@@ -40,6 +40,7 @@ type indexedDoc struct {
 type Engine struct {
 	mu                 sync.RWMutex
 	docs               map[int64]*indexedDoc
+	activeDocs         int
 	df                 map[string]int
 	trigramIndex       map[string]map[string]struct{} // trigram -> set of vocabulary terms
 	synonyms           map[string][]string            // normalized term -> expanded terms
@@ -154,6 +155,7 @@ func (e *Engine) recomputeStatsLocked() {
 		}
 	}
 
+	e.activeDocs = activeDocs
 	if activeDocs == 0 {
 		e.avgFieldLens = [5]float64{1, 1, 1, 1, 1}
 		return
@@ -185,11 +187,14 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 	for _, t := range baseTerms {
 		termWeights[t] = 1.0
 	}
-	// Mehrwort-Synonyme prüfen (z. B. "active directory" <-> "ad")
+	// Mehrwort-Synonyme nur an echten Wort-/Token-Grenzen prüfen (z. B. "ad" matcht nicht "admin")
 	for _, group := range e.multiWordSynonyms {
 		matched := false
 		for _, phrase := range group {
-			if strings.Contains(queryLow, phrase) || strings.Contains(Normalize(queryLow), Normalize(phrase)) {
+			if !strings.Contains(phrase, " ") {
+				continue
+			}
+			if containsWholePhrase(queryLow, phrase) || containsWholePhrase(Normalize(queryLow), Normalize(phrase)) {
 				matched = true
 				break
 			}
@@ -229,7 +234,7 @@ func (e *Engine) Search(q model.SearchQuery) []model.SearchHit {
 		}
 	}
 
-	totalDocs := float64(maxInt(len(e.docs), 1))
+	totalDocs := float64(maxInt(e.activeDocs, 1))
 	fieldWeights := [5]float64{weightErrorCodes, weightTitle, weightTags, weightSymptoms, weightSolution}
 	fieldNames := [5]string{"error_codes", "title", "tags", "symptoms", "solution_body"}
 
@@ -600,4 +605,28 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func containsWholePhrase(haystack, phrase string) bool {
+	if phrase == "" || haystack == "" {
+		return false
+	}
+	hWords := strings.Fields(haystack)
+	pWords := strings.Fields(phrase)
+	if len(pWords) == 0 || len(hWords) < len(pWords) {
+		return false
+	}
+	for i := 0; i <= len(hWords)-len(pWords); i++ {
+		ok := true
+		for j := range pWords {
+			if hWords[i+j] != pWords[j] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }

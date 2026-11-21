@@ -92,6 +92,11 @@ func (s *Storage) Save(r io.Reader, originalName, uploadedBy string) (model.Medi
 		return model.MediaFile{}, ErrFileTooLarge
 	}
 
+	mimeType, valid := validateMediaContent(kind, ext, data)
+	if !valid {
+		return model.MediaFile{}, ErrUnsupportedType
+	}
+
 	id := newID()
 	now := time.Now().UTC()
 	relPath := filepath.ToSlash(filepath.Join(now.Format("2006"), now.Format("01"), id+ext))
@@ -105,10 +110,6 @@ func (s *Storage) Save(r io.Reader, originalName, uploadedBy string) (model.Medi
 	}
 
 	sum := sha256.Sum256(data)
-	mimeType := http.DetectContentType(data)
-	if kind == model.MediaKindAttachment {
-		mimeType = "application/octet-stream"
-	}
 
 	return model.MediaFile{
 		ID:           id,
@@ -121,6 +122,41 @@ func (s *Storage) Save(r io.Reader, originalName, uploadedBy string) (model.Medi
 		UploadedBy:   uploadedBy,
 		CreatedAt:    now,
 	}, nil
+}
+
+// validateMediaContent prüft Magic-Bytes gegen den deklarierten Bild-/Videotyp (Schutz vor getarntem HTML/XSS).
+func validateMediaContent(kind, ext string, data []byte) (string, bool) {
+	if kind == model.MediaKindAttachment {
+		return "application/octet-stream", true
+	}
+	detected := http.DetectContentType(data)
+	switch kind {
+	case model.MediaKindImage:
+		switch ext {
+		case ".png":
+			return "image/png", detected == "image/png"
+		case ".jpg", ".jpeg":
+			return "image/jpeg", detected == "image/jpeg"
+		case ".webp":
+			return "image/webp", detected == "image/webp"
+		case ".gif":
+			return "image/gif", detected == "image/gif"
+		}
+	case model.MediaKindVideo:
+		switch ext {
+		case ".mp4":
+			// MP4 ISO Base Media File Format: "ftyp" an Byte-Offset 4
+			if len(data) >= 12 && string(data[4:8]) == "ftyp" {
+				return "video/mp4", true
+			}
+		case ".webm":
+			// WebM / EBML Magic-Header: 0x1A 0x45 0xDF 0xA3
+			if len(data) >= 4 && data[0] == 0x1a && data[1] == 0x45 && data[2] == 0xdf && data[3] == 0xa3 {
+				return "video/webm", true
+			}
+		}
+	}
+	return "", false
 }
 
 func (s *Storage) ResolvePath(storedPath string) (string, error) {
