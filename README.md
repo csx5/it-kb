@@ -1,4 +1,4 @@
-# it-kb – Lokale IT-Wissensdatenbank
+# Lokale IT-Wissensdatenbank
 
 Eigenständige, 100 % lokale Wissensdatenbank für IT-Teams als einzelnes Go-Binary mit eingebettetem Web-UI (`embed.FS`), Pure-Go SQLite und deterministischer Volltext-Such-Engine (ohne KI, ohne Cloud, ohne externe Laufzeit-Abhängigkeiten).
 
