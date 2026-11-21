@@ -33,10 +33,7 @@ func (s *Server) handleUploadMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	uploadedBy := strings.TrimSpace(r.FormValue("uploaded_by"))
-	if uploadedBy == "" {
-		uploadedBy = "Unbekannt"
-	}
+	uploadedBy := actorName(r, r.FormValue("uploaded_by"))
 
 	saved, err := s.media.Save(file, header.Filename, uploadedBy)
 	if err != nil {

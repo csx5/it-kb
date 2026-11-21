@@ -41,7 +41,7 @@ func (s *Server) handleRestoreRevision(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = decodeJSON(r, &body)
 
-	restored, err := s.store.RestoreArticleRevision(r.Context(), id, ver, body.EditorName)
+	restored, err := s.store.RestoreArticleRevision(r.Context(), id, ver, actorName(r, body.EditorName))
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "Revision oder Artikel nicht gefunden")
@@ -190,6 +190,7 @@ func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 	for _, id := range ids {
 		s.engine.RemoveArticle(id)
 	}
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "trash_emptied", "trash", clientIP(r), strconv.Itoa(len(ids))+" Artikel gelöscht")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": len(ids)})
 }
 

@@ -7,13 +7,38 @@ const AUTHOR_KEY = "itkb_author";
 const imageEditor = createImageEditorController();
 
 const els = {
+  authScreen: document.getElementById("auth-screen"),
+  authSiteTitle: document.getElementById("auth-site-title"),
+  authSubtitle: document.getElementById("auth-subtitle"),
+  authLoginForm: document.getElementById("auth-login-form"),
+  loginUsername: document.getElementById("login-username"),
+  loginPassword: document.getElementById("login-password"),
+  loginError: document.getElementById("login-error"),
+  authSetupForm: document.getElementById("auth-setup-form"),
+  setupUsername: document.getElementById("setup-username"),
+  setupDisplayName: document.getElementById("setup-display-name"),
+  setupPassword: document.getElementById("setup-password"),
+  setupPasswordConfirm: document.getElementById("setup-password-confirm"),
+  setupError: document.getElementById("setup-error"),
+  appShell: document.getElementById("app-shell"),
   siteTitle: document.getElementById("site-title"),
   appVersion: document.getElementById("app-version"),
   btnNewArticle: document.getElementById("btn-new-article"),
   btnAdminView: document.getElementById("btn-admin-view"),
   adminPanel: document.getElementById("admin-panel"),
   btnAdminClose: document.getElementById("btn-admin-close"),
+  authorBoxWrap: document.getElementById("author-box-wrap"),
   authorInput: document.getElementById("author-input"),
+  userMenu: document.getElementById("user-menu"),
+  userBadge: document.getElementById("user-badge"),
+  btnChangePw: document.getElementById("btn-change-pw"),
+  btnLogout: document.getElementById("btn-logout"),
+  passwordDialog: document.getElementById("password-dialog"),
+  changePwForm: document.getElementById("change-pw-form"),
+  pwCurrent: document.getElementById("pw-current"),
+  pwNew: document.getElementById("pw-new"),
+  pwConfirm: document.getElementById("pw-confirm"),
+  btnPwCancel: document.getElementById("btn-pw-cancel"),
   themeToggle: document.getElementById("theme-toggle"),
   searchPanel: document.getElementById("search-panel"),
   searchInput: document.getElementById("search-input"),
@@ -60,7 +85,9 @@ const els = {
 };
 
 const state = {
-  meta: { categories: [], admin_protected: false },
+  meta: { categories: [], admin_protected: false, auth_required: true },
+  user: null,
+  authRequired: true,
   currentArticle: null,
   editingArticleId: null,
   editingVersion: 0,
@@ -73,7 +100,29 @@ let searchTimer = null;
 let previewTimer = null;
 let toastTimer = null;
 
+function canEdit() {
+  if (!state.authRequired) return true;
+  return state.user && (state.user.role === "editor" || state.user.role === "admin");
+}
+
+function isAdmin() {
+  if (!state.authRequired) return true;
+  return state.user && state.user.role === "admin";
+}
+
+function formatRole(role) {
+  switch (role) {
+    case "admin": return "Administrator";
+    case "editor": return "Bearbeiter";
+    case "reader": return "Leser";
+    default: return role || "";
+  }
+}
+
 function getAuthor() {
+  if (state.user) {
+    return state.user.display_name || state.user.username;
+  }
   return (els.authorInput.value || "").trim() || "Anonym";
 }
 
@@ -104,7 +153,11 @@ function initAuthor() {
 
 async function apiRequest(url, options = {}) {
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "it-kb",
+      ...(options.headers || {}),
+    },
     ...options,
   });
   let body = null;
@@ -113,7 +166,51 @@ async function apiRequest(url, options = {}) {
   } catch {
     body = null;
   }
+  if (res.status === 401 && state.authRequired && !url.startsWith("/api/auth/")) {
+    state.user = null;
+    showAuthScreen(false);
+  }
   return { ok: res.ok, status: res.status, body };
+}
+
+function applyRoleUI() {
+  els.authorBoxWrap.classList.toggle("hidden", state.authRequired);
+  els.userMenu.classList.toggle("hidden", !state.authRequired || !state.user);
+  if (state.user) {
+    els.userBadge.textContent = `${state.user.display_name || state.user.username} (${formatRole(state.user.role)})`;
+  }
+  els.btnNewArticle.classList.toggle("hidden", !canEdit());
+  els.btnAdminView.classList.toggle("hidden", !canEdit());
+  els.btnAdminView.textContent = isAdmin() ? "Admin-Konsole" : "Verwaltung";
+}
+
+function showAuthScreen(needsSetup, siteTitle = "") {
+  els.appShell.classList.add("hidden");
+  els.authScreen.classList.remove("hidden");
+  if (siteTitle) {
+    els.authSiteTitle.textContent = siteTitle;
+    document.title = siteTitle;
+  }
+  els.loginError.classList.add("hidden");
+  els.setupError.classList.add("hidden");
+
+  if (needsSetup) {
+    els.authSubtitle.textContent = "Ersteinrichtung: Legen Sie jetzt das erste Administrator-Konto an.";
+    els.authSetupForm.classList.remove("hidden");
+    els.authLoginForm.classList.add("hidden");
+    els.setupUsername.focus();
+  } else {
+    els.authSubtitle.textContent = "Bitte melden Sie sich an, um auf die IT-Wissensdatenbank zuzugreifen.";
+    els.authLoginForm.classList.remove("hidden");
+    els.authSetupForm.classList.add("hidden");
+    els.loginUsername.focus();
+  }
+}
+
+function showAppShell() {
+  els.authScreen.classList.add("hidden");
+  els.appShell.classList.remove("hidden");
+  applyRoleUI();
 }
 
 function showView(viewName) {
@@ -272,40 +369,47 @@ async function openArticle(id) {
     historyBtn.className = "btn";
     historyBtn.textContent = `Historie (v${a.version})`;
     historyBtn.addEventListener("click", () => adminUI.openHistory(a.id));
+    actions.appendChild(historyBtn);
 
-    const verifyBtn = document.createElement("button");
-    verifyBtn.type = "button";
-    verifyBtn.className = "btn";
-    verifyBtn.textContent = "Als geprüft markieren";
-    verifyBtn.addEventListener("click", () => verifyArticle(a.id));
+    if (canEdit()) {
+      const verifyBtn = document.createElement("button");
+      verifyBtn.type = "button";
+      verifyBtn.className = "btn";
+      verifyBtn.textContent = "Als geprüft markieren";
+      verifyBtn.addEventListener("click", () => verifyArticle(a.id));
 
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "btn btn-primary";
-    editBtn.textContent = "Bearbeiten";
-    editBtn.addEventListener("click", () => openEditor(a));
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "btn btn-primary";
+      editBtn.textContent = "Bearbeiten";
+      editBtn.addEventListener("click", () => openEditor(a));
 
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "btn btn-danger";
-    delBtn.textContent = "In Papierkorb";
-    delBtn.addEventListener("click", () => softDeleteArticle(a.id));
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn btn-danger";
+      delBtn.textContent = "In Papierkorb";
+      delBtn.addEventListener("click", () => softDeleteArticle(a.id));
 
-    actions.append(historyBtn, verifyBtn, editBtn, delBtn);
+      actions.append(verifyBtn, editBtn, delBtn);
+    }
   } else {
-    const restoreBtn = document.createElement("button");
-    restoreBtn.type = "button";
-    restoreBtn.className = "btn btn-primary";
-    restoreBtn.textContent = "Wiederherstellen";
-    restoreBtn.addEventListener("click", () => restoreArticle(a.id));
+    if (canEdit()) {
+      const restoreBtn = document.createElement("button");
+      restoreBtn.type = "button";
+      restoreBtn.className = "btn btn-primary";
+      restoreBtn.textContent = "Wiederherstellen";
+      restoreBtn.addEventListener("click", () => restoreArticle(a.id));
+      actions.appendChild(restoreBtn);
+    }
 
-    const permBtn = document.createElement("button");
-    permBtn.type = "button";
-    permBtn.className = "btn btn-danger";
-    permBtn.textContent = "Endgültig löschen";
-    permBtn.addEventListener("click", () => permanentDeleteArticle(a.id));
-
-    actions.append(restoreBtn, permBtn);
+    if (isAdmin()) {
+      const permBtn = document.createElement("button");
+      permBtn.type = "button";
+      permBtn.className = "btn btn-danger";
+      permBtn.textContent = "Endgültig löschen";
+      permBtn.addEventListener("click", () => permanentDeleteArticle(a.id));
+      actions.appendChild(permBtn);
+    }
   }
 
   topbar.append(backBtn, actions);
@@ -381,7 +485,11 @@ async function uploadMediaBlob(blob, filename) {
   fd.append("file", blob, filename);
   fd.append("uploaded_by", getAuthor());
 
-  const res = await fetch("/api/media", { method: "POST", body: fd });
+  const res = await fetch("/api/media", {
+    method: "POST",
+    headers: { "X-Requested-With": "it-kb" },
+    body: fd,
+  });
   let body = null;
   try {
     body = await res.json();
@@ -681,7 +789,11 @@ function stopLockHeartbeat() {
   if (state.editingArticleId !== null) {
     const id = state.editingArticleId;
     const editor = encodeURIComponent(getAuthor());
-    fetch(`/api/articles/${id}/lock?editor=${editor}`, { method: "DELETE", keepalive: true }).catch(() => {});
+    fetch(`/api/articles/${id}/lock?editor=${editor}`, {
+      method: "DELETE",
+      headers: { "X-Requested-With": "it-kb" },
+      keepalive: true,
+    }).catch(() => {});
   }
 }
 
@@ -889,15 +1001,128 @@ const adminUI = createAdminAndHistoryController({
   apiRequest,
   getAuthor,
   getMeta: () => state.meta,
+  getUser: () => state.user,
+  canEdit,
+  isAdmin,
   reloadMeta: loadMeta,
   onRestoredArticle: (id) => openArticle(id),
   showToast,
 });
 
+function bindAuthEvents() {
+  els.authLoginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    els.loginError.classList.add("hidden");
+    const { ok, body } = await apiRequest("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: els.loginUsername.value.trim(),
+        password: els.loginPassword.value,
+      }),
+    });
+    if (!ok || !body?.user) {
+      els.loginError.textContent = body?.error || "Anmeldung fehlgeschlagen";
+      els.loginError.classList.remove("hidden");
+      els.loginPassword.value = "";
+      els.loginPassword.focus();
+      return;
+    }
+    state.user = body.user;
+    els.loginPassword.value = "";
+    showAppShell();
+    await loadMeta();
+    await runSearch();
+  });
+
+  els.authSetupForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    els.setupError.classList.add("hidden");
+    if (els.setupPassword.value !== els.setupPasswordConfirm.value) {
+      els.setupError.textContent = "Die beiden Passwörter stimmen nicht überein.";
+      els.setupError.classList.remove("hidden");
+      return;
+    }
+    const { ok, body } = await apiRequest("/api/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({
+        username: els.setupUsername.value.trim(),
+        display_name: els.setupDisplayName.value.trim(),
+        password: els.setupPassword.value,
+      }),
+    });
+    if (!ok || !body?.user) {
+      els.setupError.textContent = body?.error || "Einrichtung fehlgeschlagen";
+      els.setupError.classList.remove("hidden");
+      return;
+    }
+    state.user = body.user;
+    els.setupPassword.value = "";
+    els.setupPasswordConfirm.value = "";
+    showAppShell();
+    showToast("Administrator erfolgreich angelegt");
+    await loadMeta();
+    await runSearch();
+  });
+
+  els.btnLogout.addEventListener("click", async () => {
+    stopLockHeartbeat();
+    await apiRequest("/api/auth/logout", { method: "POST" });
+    state.user = null;
+    els.resultsList.innerHTML = "";
+    els.articleDetail.innerHTML = "";
+    showView("list");
+    showAuthScreen(false, state.meta.site_title);
+  });
+
+  els.btnChangePw.addEventListener("click", () => {
+    els.pwCurrent.value = "";
+    els.pwNew.value = "";
+    els.pwConfirm.value = "";
+    els.passwordDialog.showModal();
+    els.pwCurrent.focus();
+  });
+  els.btnPwCancel.addEventListener("click", () => els.passwordDialog.close());
+  els.changePwForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (els.pwNew.value !== els.pwConfirm.value) {
+      showToast("Neue Passwörter stimmen nicht überein");
+      return;
+    }
+    const { ok, body } = await apiRequest("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: els.pwCurrent.value,
+        new_password: els.pwNew.value,
+      }),
+    });
+    if (!ok) {
+      showToast(body?.error || "Passwortänderung fehlgeschlagen");
+      return;
+    }
+    els.passwordDialog.close();
+    showToast("Passwort erfolgreich geändert");
+  });
+}
+
 async function boot() {
   initTheme();
   initAuthor();
   bindEvents();
+  bindAuthEvents();
+
+  const { ok, body } = await apiRequest("/api/auth/status");
+  if (!ok || !body) {
+    throw new Error("Serverstatus konnte nicht geladen werden");
+  }
+  state.authRequired = Boolean(body.auth_required);
+  state.user = body.user || null;
+
+  if (state.authRequired && !body.authenticated) {
+    showAuthScreen(Boolean(body.needs_setup), body.site_title);
+    return;
+  }
+
+  showAppShell();
   await loadMeta();
   await runSearch();
 }

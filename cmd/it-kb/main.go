@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/csx5/it-kb/internal/auth"
 	"github.com/csx5/it-kb/internal/backup"
 	"github.com/csx5/it-kb/internal/config"
 	"github.com/csx5/it-kb/internal/db"
+	"github.com/csx5/it-kb/internal/model"
 	"github.com/csx5/it-kb/internal/search"
 	"github.com/csx5/it-kb/internal/web"
 )
@@ -50,7 +52,8 @@ func parseConfigFlags(args []string) (config.Config, error) {
 	listen := fs.String("listen", "", "HTTP/HTTPS-Adresse (Standard :8080)")
 	dataDir := fs.String("data", "", "Datenverzeichnis für SQLite und Medien (Standard ./data)")
 	title := fs.String("title", "", "Seitentitel in der Web-Oberfläche")
-	adminPw := fs.String("admin-password", "", "Optionales Admin-Passwort für kritische Aktionen")
+	authFlag := fs.String("auth", "", "Login-Zwang aktivieren (true/false, Standard: true)")
+	adminPw := fs.String("admin-password", "", "Optionales Admin-Passwort im Modus --auth=false")
 	tlsCert := fs.String("tls-cert", "", "Pfad zum TLS-Zertifikat (PEM)")
 	tlsKey := fs.String("tls-key", "", "Pfad zum privaten TLS-Schlüssel (PEM)")
 
@@ -69,6 +72,9 @@ func parseConfigFlags(args []string) (config.Config, error) {
 	}
 	if *title != "" {
 		cfg.SiteTitle = *title
+	}
+	if *authFlag != "" {
+		cfg.AuthRequired = *authFlag != "false" && *authFlag != "0"
 	}
 	if *adminPw != "" {
 		cfg.AdminPassword = *adminPw
@@ -113,6 +119,20 @@ func startServer(ctx context.Context, cfg config.Config) error {
 
 	if err := store.SeedInitialData(ctx, cfg.SeedDemoArticles); err != nil {
 		return fmt.Errorf("initialdaten anlegen: %w", err)
+	}
+	_ = store.CleanupExpiredSessions(ctx)
+
+	if cfg.BootstrapAdmin != "" && cfg.BootstrapPassword != "" {
+		if n, err := store.CountUsers(ctx); err == nil && n == 0 {
+			hash, err := auth.HashPassword(cfg.BootstrapPassword)
+			if err != nil {
+				return fmt.Errorf("bootstrap-admin passwort ungültig: %w", err)
+			}
+			if _, err := store.CreateUser(ctx, cfg.BootstrapAdmin, cfg.BootstrapAdmin, hash, model.RoleAdmin); err != nil {
+				return fmt.Errorf("bootstrap-admin anlegen: %w", err)
+			}
+			log.Printf("Bootstrap-Administrator '%s' angelegt", cfg.BootstrapAdmin)
+		}
 	}
 
 	articles, err := store.ListAllArticles(ctx)

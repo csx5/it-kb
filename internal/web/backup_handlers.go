@@ -44,6 +44,7 @@ func (s *Server) handleFullBackupDownload(w http.ResponseWriter, r *http.Request
 	filename := fmt.Sprintf("it-kb-vollbackup-%s.zip", time.Now().Format("20060102-150405"))
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_download", "full_backup", clientIP(r), filename)
 	http.ServeFile(w, r, tmpPath)
 }
 
@@ -84,6 +85,7 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 
 	// Suchindex nach Restore sofort neu aufbauen
 	s.reloadSearchIndex(r.Context())
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_restore", "full_backup", clientIP(r), "Voll-Backup eingespielt")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "restored",
 	})

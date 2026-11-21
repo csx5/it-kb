@@ -18,6 +18,7 @@ import (
 func TestBackupExportRestoreAndZipSlipRejection(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
+	cfg.AuthRequired = false
 	cfg.AdminPassword = "secret"
 	cfg.SeedDemoArticles = true
 

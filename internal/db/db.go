@@ -96,16 +96,28 @@ func (s *Store) DB() *sql.DB {
 }
 
 func (s *Store) migrate() error {
-	raw, err := migrationsFS.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return fmt.Errorf("migration 001 lesen: %w", err)
+	steps := []struct {
+		version int
+		file    string
+	}{
+		{1, "migrations/001_init.sql"},
+		{2, "migrations/002_auth_audit.sql"},
 	}
-	if _, err := s.sqlDB.Exec(string(raw)); err != nil {
-		return fmt.Errorf("migration 001 ausführen: %w", err)
-	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = s.sqlDB.Exec(`INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?)`, now)
-	return err
+	for _, st := range steps {
+		raw, err := migrationsFS.ReadFile(st.file)
+		if err != nil {
+			return fmt.Errorf("migration %03d lesen: %w", st.version, err)
+		}
+		if _, err := s.sqlDB.Exec(string(raw)); err != nil {
+			return fmt.Errorf("migration %03d ausführen: %w", st.version, err)
+		}
+		if _, err := s.sqlDB.Exec(`INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)`, st.version, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // VacuumInto erstellt einen konsistenten SQLite-Hot-Snapshot für Voll-Backups.

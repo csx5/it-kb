@@ -16,6 +16,10 @@ type Config struct {
 	Listen             string `json:"listen"`
 	DataDir            string `json:"data_dir"`
 	SiteTitle          string `json:"site_title"`
+	AuthRequired       bool   `json:"auth_required"`
+	SessionHours       int    `json:"session_hours"`
+	BootstrapAdmin     string `json:"bootstrap_admin"`
+	BootstrapPassword  string `json:"bootstrap_password"`
 	AdminPassword      string `json:"admin_password"`
 	TLSCert            string `json:"tls_cert"`
 	TLSKey             string `json:"tls_key"`
@@ -31,6 +35,8 @@ func Default() Config {
 		Listen:             ":8080",
 		DataDir:            "./data",
 		SiteTitle:          "IT-Wissensdatenbank",
+		AuthRequired:       true,
+		SessionHours:       12,
 		ReviewReminderDays: 180,
 		MaxImageMB:         15,
 		MaxVideoMB:         100,
@@ -90,6 +96,22 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("ITKB_SITE_TITLE"); v != "" {
 		cfg.SiteTitle = v
+	}
+	if v := os.Getenv("ITKB_AUTH_REQUIRED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.AuthRequired = b
+		}
+	}
+	if v := os.Getenv("ITKB_SESSION_HOURS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.SessionHours = n
+		}
+	}
+	if v := os.Getenv("ITKB_BOOTSTRAP_ADMIN"); v != "" {
+		cfg.BootstrapAdmin = v
+	}
+	if v := os.Getenv("ITKB_BOOTSTRAP_PASSWORD"); v != "" {
+		cfg.BootstrapPassword = v
 	}
 	if v := os.Getenv("ITKB_ADMIN_PASSWORD"); v != "" {
 		cfg.AdminPassword = v

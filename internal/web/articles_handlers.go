@@ -33,9 +33,9 @@ func (s *Server) handleCreateArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	author := strings.TrimSpace(p.AuthorName)
-	if author == "" {
-		author = strings.TrimSpace(p.EditorName)
+	author := actorName(r, p.AuthorName)
+	if strings.TrimSpace(p.AuthorName) == "" && currentUser(r) == nil {
+		author = actorName(r, p.EditorName)
 	}
 
 	created, err := s.store.CreateArticle(r.Context(), db.CreateArticleInput{
@@ -71,9 +71,9 @@ func (s *Server) handleUpdateArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	editor := strings.TrimSpace(p.EditorName)
-	if editor == "" {
-		editor = strings.TrimSpace(p.AuthorName)
+	editor := actorName(r, p.EditorName)
+	if strings.TrimSpace(p.EditorName) == "" && currentUser(r) == nil {
+		editor = actorName(r, p.AuthorName)
 	}
 
 	updated, err := s.store.UpdateArticle(r.Context(), id, db.UpdateArticleInput{
@@ -123,7 +123,7 @@ func (s *Server) handleVerifyArticle(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = decodeJSON(r, &body)
 
-	updated, err := s.store.VerifyArticle(r.Context(), id, body.Verifier)
+	updated, err := s.store.VerifyArticle(r.Context(), id, actorName(r, body.Verifier))
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "Artikel nicht gefunden")
@@ -196,6 +196,7 @@ func (s *Server) handlePermanentDeleteArticle(w http.ResponseWriter, r *http.Req
 	}
 
 	s.engine.RemoveArticle(id)
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "article_permanent_delete", strconv.FormatInt(id, 10), clientIP(r), "Artikel endgültig gelöscht")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -208,11 +209,12 @@ func (s *Server) handleHeartbeatLock(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Editor string `json:"editor"`
 	}
-	if err := decodeJSON(r, &body); err != nil || strings.TrimSpace(body.Editor) == "" {
+	_ = decodeJSON(r, &body)
+	editor := actorName(r, body.Editor)
+	if editor == "" || editor == "Unbekannt" {
 		writeError(w, http.StatusBadRequest, "Editor-Name erforderlich")
 		return
 	}
-	editor := strings.TrimSpace(body.Editor)
 	lock := s.locks.Heartbeat(id, editor)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"lock":     lock,

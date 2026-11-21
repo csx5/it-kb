@@ -18,6 +18,7 @@ import (
 func TestMediaUploadWhitelistAttachmentHeadersAndOrphanCleanup(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
+	cfg.AuthRequired = false
 	cfg.SeedDemoArticles = false
 
 	store, err := db.Open(cfg.DBPath())

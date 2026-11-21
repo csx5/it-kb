@@ -7,6 +7,50 @@
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
+  <section id="auth-screen" class="auth-screen hidden">
+    <div class="auth-card">
+      <div class="auth-header">
+        <h1 id="auth-site-title">IT-Wissensdatenbank</h1>
+        <p id="auth-subtitle" class="modal-desc">Bitte melden Sie sich an, um auf die Wissensdatenbank zuzugreifen.</p>
+      </div>
+
+      <form id="auth-login-form" class="auth-form hidden">
+        <label class="field">
+          <span>Benutzername</span>
+          <input type="text" id="login-username" autocomplete="username" required>
+        </label>
+        <label class="field">
+          <span>Passwort</span>
+          <input type="password" id="login-password" autocomplete="current-password" required>
+        </label>
+        <div id="login-error" class="banner banner-danger hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block">Anmelden</button>
+      </form>
+
+      <form id="auth-setup-form" class="auth-form hidden">
+        <label class="field">
+          <span>Administrator-Benutzername</span>
+          <input type="text" id="setup-username" placeholder="z. B. admin" autocomplete="username" required>
+        </label>
+        <label class="field">
+          <span>Anzeigename</span>
+          <input type="text" id="setup-display-name" placeholder="z. B. Max Mustermann">
+        </label>
+        <label class="field">
+          <span>Passwort (mindestens 10 Zeichen)</span>
+          <input type="password" id="setup-password" autocomplete="new-password" minlength="10" required>
+        </label>
+        <label class="field">
+          <span>Passwort wiederholen</span>
+          <input type="password" id="setup-password-confirm" autocomplete="new-password" minlength="10" required>
+        </label>
+        <div id="setup-error" class="banner banner-danger hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block">Administrator anlegen &amp; starten</button>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-shell">
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
@@ -15,11 +59,16 @@
       </div>
       <div class="topbar-actions">
         <button type="button" id="btn-new-article" class="btn btn-primary">Neuer Artikel</button>
-        <button type="button" id="btn-admin-view" class="btn">Verwaltung</button>
-        <label class="author-box" title="Wird lokal im Browser gespeichert">
+        <button type="button" id="btn-admin-view" class="btn">Admin-Konsole</button>
+        <label id="author-box-wrap" class="author-box" title="Wird lokal im Browser gespeichert">
           <span>Autor:</span>
           <input type="text" id="author-input" placeholder="Kürzel (z. B. MK)" maxlength="32">
         </label>
+        <div id="user-menu" class="user-menu hidden">
+          <span id="user-badge" class="badge badge-user"></span>
+          <button type="button" id="btn-change-pw" class="btn btn-sm">Passwort</button>
+          <button type="button" id="btn-logout" class="btn btn-sm">Abmelden</button>
+        </div>
         <button type="button" id="theme-toggle" class="btn btn-secondary">Theme wechseln</button>
       </div>
     </div>
@@ -170,12 +219,14 @@
 
       <section id="admin-panel" class="editor-panel hidden">
         <div class="editor-header">
-          <h2>Verwaltung &amp; Einstellungen</h2>
+          <h2>Admin-Konsole &amp; Verwaltung</h2>
           <div class="editor-header-actions">
             <div class="segmented" role="tablist">
-              <button type="button" class="seg-btn active" data-admin-tab="synonyms">Synonyme</button>
-              <button type="button" class="seg-btn" data-admin-tab="categories">Kategorien</button>
-              <button type="button" class="seg-btn" data-admin-tab="maintenance">Wartung &amp; Backup</button>
+              <button type="button" class="seg-btn active" data-admin-tab="users" id="tab-btn-users">Benutzer</button>
+              <button type="button" class="seg-btn" data-admin-tab="audit" id="tab-btn-audit">Sicherheits-Log</button>
+              <button type="button" class="seg-btn" data-admin-tab="synonyms" id="tab-btn-synonyms">Synonyme</button>
+              <button type="button" class="seg-btn" data-admin-tab="categories" id="tab-btn-categories">Kategorien</button>
+              <button type="button" class="seg-btn" data-admin-tab="maintenance" id="tab-btn-maintenance">Wartung &amp; Backup</button>
             </div>
             <button type="button" id="btn-admin-close" class="btn">Zurück zur Suche</button>
           </div>
@@ -183,12 +234,53 @@
 
         <div id="admin-password-wrap" class="banner banner-warn hidden">
           <label class="admin-pw-row">
-            <span>Admin-Passwort (für geschützte Aktionen wie Einstellungen, Bereinigung, Papierkorb &amp; Restore):</span>
+            <span>Admin-Passwort (nur im offenen Modus ohne Login):</span>
             <input type="password" id="admin-password-input" placeholder="Admin-Passwort eingeben">
           </label>
         </div>
 
-        <div id="admin-tab-synonyms" class="admin-tab-panel">
+        <div id="admin-tab-users" class="admin-tab-panel">
+          <p class="modal-desc">Benutzerkonten und Rollen (Administrator, Bearbeiter, Leser). Passwörter werden mit Argon2id gehasht; beim Sperren oder Zurücksetzen werden aktive Sitzungen sofort beendet.</p>
+          <div class="admin-card">
+            <h3>Neues Benutzerkonto anlegen</h3>
+            <div class="admin-row">
+              <input type="text" id="new-user-name" placeholder="Benutzername (z. B. m.muster)">
+              <input type="text" id="new-user-display" placeholder="Anzeigename (z. B. Max Mustermann)">
+              <select id="new-user-role">
+                <option value="editor">Bearbeiter</option>
+                <option value="reader">Leser</option>
+                <option value="admin">Administrator</option>
+              </select>
+              <input type="password" id="new-user-password" placeholder="Initialpasswort (min. 10 Zeichen)">
+              <button type="button" id="btn-create-user" class="btn btn-primary">Benutzer anlegen</button>
+            </div>
+          </div>
+          <div id="admin-users-list" class="admin-list"></div>
+        </div>
+
+        <div id="admin-tab-audit" class="admin-tab-panel hidden">
+          <div class="audit-header">
+            <p class="modal-desc">Protokoll der letzten 200 sicherheitsrelevanten Ereignisse (Anmeldungen, Fehlversuche, Benutzeränderungen, Backups, Löschvorgänge).</p>
+            <button type="button" id="btn-refresh-audit" class="btn">Aktualisieren</button>
+          </div>
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>Zeitpunkt</th>
+                  <th>Akteur</th>
+                  <th>Aktion</th>
+                  <th>Ziel</th>
+                  <th>IP</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="admin-audit-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="admin-tab-synonyms" class="admin-tab-panel hidden">
           <p class="modal-desc">Synonym-Gruppen wirken sofort bidirektional in der Suche (inkl. Mehrwort-Begriffen wie <code>microsoft 365</code>).</p>
           <div class="admin-row admin-add-row">
             <input type="text" id="admin-syn-input" class="admin-row-input" placeholder="Neue Gruppe kommagetrennt, z. B.: vpn, tunnel, openvpn, wireguard">
@@ -332,12 +424,38 @@
     </div>
   </dialog>
 
+  <dialog id="password-dialog" class="modal-dialog modal-narrow">
+    <div class="modal-box">
+      <h3>Eigenes Passwort ändern</h3>
+      <p class="modal-desc">Nach dem Ändern werden alle anderen offenen Sitzungen automatisch abgemeldet.</p>
+      <form id="change-pw-form" class="auth-form">
+        <label class="field">
+          <span>Aktuelles Passwort</span>
+          <input type="password" id="pw-current" autocomplete="current-password" required>
+        </label>
+        <label class="field">
+          <span>Neues Passwort (mindestens 10 Zeichen)</span>
+          <input type="password" id="pw-new" autocomplete="new-password" minlength="10" required>
+        </label>
+        <label class="field">
+          <span>Neues Passwort wiederholen</span>
+          <input type="password" id="pw-confirm" autocomplete="new-password" minlength="10" required>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="btn-pw-cancel" class="btn">Abbrechen</button>
+          <button type="submit" class="btn btn-primary">Passwort speichern</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <dialog id="lightbox-dialog" class="modal-dialog modal-lightbox">
     <div class="lightbox-wrap">
       <button type="button" id="lightbox-close" class="btn lightbox-close">Schließen (Esc)</button>
       <img id="lightbox-img" alt="Screenshot-Vollbild">
     </div>
   </dialog>
+  </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 

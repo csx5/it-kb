@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/csx5/it-kb/internal/auth"
 	"github.com/csx5/it-kb/internal/config"
 	"github.com/csx5/it-kb/internal/db"
 	"github.com/csx5/it-kb/internal/markdown"
@@ -24,14 +25,16 @@ import (
 var staticFS embed.FS
 
 type Server struct {
-	cfg      config.Config
-	store    *db.Store
-	engine   *search.Engine
-	md       *markdown.Renderer
-	media    *media.Storage
-	locks    *LockManager
-	mux      *http.ServeMux
-	version  string
+	cfg         config.Config
+	store       *db.Store
+	engine      *search.Engine
+	md          *markdown.Renderer
+	media       *media.Storage
+	locks       *LockManager
+	userLimiter *auth.LoginRateLimiter
+	ipLimiter   *auth.LoginRateLimiter
+	mux         *http.ServeMux
+	version     string
 }
 
 func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, version string) (*Server, error) {
@@ -45,9 +48,11 @@ func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, versio
 			MaxVideoBytes:      cfg.MaxVideoMB * 1024 * 1024,
 			MaxAttachmentBytes: cfg.MaxAttachmentMB * 1024 * 1024,
 		}),
-		locks:   NewLockManager(35 * time.Second),
-		mux:     http.NewServeMux(),
-		version: version,
+		locks:       NewLockManager(35 * time.Second),
+		userLimiter: auth.NewLoginRateLimiter(5, 5*time.Minute, 5*time.Minute),
+		ipLimiter:   auth.NewLoginRateLimiter(15, 5*time.Minute, 5*time.Minute),
+		mux:         http.NewServeMux(),
+		version:     version,
 	}
 
 	if err := s.registerRoutes(); err != nil {
@@ -61,38 +66,56 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) registerRoutes() error {
+	// Öffentlich (Health + Authentifizierung)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
-	s.mux.HandleFunc("GET /api/meta", s.handleMeta)
-	s.mux.HandleFunc("GET /api/search", s.handleSearch)
-	s.mux.HandleFunc("POST /api/preview", s.handlePreviewMarkdown)
-	s.mux.HandleFunc("POST /api/articles", s.handleCreateArticle)
-	s.mux.HandleFunc("GET /api/articles/{id}", s.handleGetArticle)
-	s.mux.HandleFunc("PUT /api/articles/{id}", s.handleUpdateArticle)
-	s.mux.HandleFunc("DELETE /api/articles/{id}", s.handleSoftDeleteArticle)
-	s.mux.HandleFunc("POST /api/articles/{id}/restore", s.handleRestoreArticle)
-	s.mux.HandleFunc("POST /api/articles/{id}/verify", s.handleVerifyArticle)
-	s.mux.HandleFunc("DELETE /api/articles/{id}/permanent", s.RequireAdmin(s.handlePermanentDeleteArticle))
-	s.mux.HandleFunc("POST /api/articles/{id}/lock", s.handleHeartbeatLock)
-	s.mux.HandleFunc("DELETE /api/articles/{id}/lock", s.handleReleaseLock)
-	s.mux.HandleFunc("GET /api/articles/{id}/revisions", s.handleListRevisions)
-	s.mux.HandleFunc("POST /api/articles/{id}/revisions/{version}/restore", s.handleRestoreRevision)
-	s.mux.HandleFunc("POST /api/media", s.handleUploadMedia)
-	s.mux.HandleFunc("GET /media/{id}", s.handleServeMedia)
-	s.mux.HandleFunc("GET /api/media/orphans", s.RequireAdmin(s.handleListOrphanMedia))
-	s.mux.HandleFunc("POST /api/media/cleanup", s.RequireAdmin(s.handleCleanupOrphanMedia))
-	s.mux.HandleFunc("GET /api/categories", s.handleListCategories)
-	s.mux.HandleFunc("POST /api/categories", s.handleCreateCategory)
-	s.mux.HandleFunc("PUT /api/categories/{id}", s.handleUpdateCategory)
-	s.mux.HandleFunc("DELETE /api/categories/{id}", s.handleDeleteCategory)
-	s.mux.HandleFunc("GET /api/synonyms", s.handleListSynonyms)
-	s.mux.HandleFunc("POST /api/synonyms", s.handleCreateSynonym)
-	s.mux.HandleFunc("PUT /api/synonyms/{id}", s.handleUpdateSynonym)
-	s.mux.HandleFunc("DELETE /api/synonyms/{id}", s.handleDeleteSynonym)
-	s.mux.HandleFunc("PUT /api/settings", s.RequireAdmin(s.handleUpdateSettings))
-	s.mux.HandleFunc("DELETE /api/trash", s.RequireAdmin(s.handleEmptyTrash))
-	s.mux.HandleFunc("GET /api/export/markdown", s.handleExportMarkdown)
-	s.mux.HandleFunc("GET /api/backup/full", s.RequireAdmin(s.handleFullBackupDownload))
-	s.mux.HandleFunc("POST /api/backup/restore", s.RequireAdmin(s.handleFullBackupRestore))
+	s.mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
+	s.mux.HandleFunc("POST /api/auth/setup", s.handleInitialAdminSetup)
+	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("POST /api/auth/password", s.requireAuth(model.RoleReader, s.handleChangeOwnPassword))
+
+	// Lesen (Reader+)
+	s.mux.HandleFunc("GET /api/meta", s.requireAuth(model.RoleReader, s.handleMeta))
+	s.mux.HandleFunc("GET /api/search", s.requireAuth(model.RoleReader, s.handleSearch))
+	s.mux.HandleFunc("GET /api/articles/{id}", s.requireAuth(model.RoleReader, s.handleGetArticle))
+	s.mux.HandleFunc("GET /api/articles/{id}/revisions", s.requireAuth(model.RoleReader, s.handleListRevisions))
+	s.mux.HandleFunc("GET /media/{id}", s.requireAuth(model.RoleReader, s.handleServeMedia))
+	s.mux.HandleFunc("GET /api/categories", s.requireAuth(model.RoleReader, s.handleListCategories))
+	s.mux.HandleFunc("GET /api/synonyms", s.requireAuth(model.RoleReader, s.handleListSynonyms))
+
+	// Bearbeiten (Editor+)
+	s.mux.HandleFunc("POST /api/preview", s.requireAuth(model.RoleEditor, s.handlePreviewMarkdown))
+	s.mux.HandleFunc("POST /api/articles", s.requireAuth(model.RoleEditor, s.handleCreateArticle))
+	s.mux.HandleFunc("PUT /api/articles/{id}", s.requireAuth(model.RoleEditor, s.handleUpdateArticle))
+	s.mux.HandleFunc("DELETE /api/articles/{id}", s.requireAuth(model.RoleEditor, s.handleSoftDeleteArticle))
+	s.mux.HandleFunc("POST /api/articles/{id}/restore", s.requireAuth(model.RoleEditor, s.handleRestoreArticle))
+	s.mux.HandleFunc("POST /api/articles/{id}/verify", s.requireAuth(model.RoleEditor, s.handleVerifyArticle))
+	s.mux.HandleFunc("POST /api/articles/{id}/lock", s.requireAuth(model.RoleEditor, s.handleHeartbeatLock))
+	s.mux.HandleFunc("DELETE /api/articles/{id}/lock", s.requireAuth(model.RoleEditor, s.handleReleaseLock))
+	s.mux.HandleFunc("POST /api/articles/{id}/revisions/{version}/restore", s.requireAuth(model.RoleEditor, s.handleRestoreRevision))
+	s.mux.HandleFunc("POST /api/media", s.requireAuth(model.RoleEditor, s.handleUploadMedia))
+	s.mux.HandleFunc("POST /api/categories", s.requireAuth(model.RoleEditor, s.handleCreateCategory))
+	s.mux.HandleFunc("PUT /api/categories/{id}", s.requireAuth(model.RoleEditor, s.handleUpdateCategory))
+	s.mux.HandleFunc("DELETE /api/categories/{id}", s.requireAuth(model.RoleEditor, s.handleDeleteCategory))
+	s.mux.HandleFunc("POST /api/synonyms", s.requireAuth(model.RoleEditor, s.handleCreateSynonym))
+	s.mux.HandleFunc("PUT /api/synonyms/{id}", s.requireAuth(model.RoleEditor, s.handleUpdateSynonym))
+	s.mux.HandleFunc("DELETE /api/synonyms/{id}", s.requireAuth(model.RoleEditor, s.handleDeleteSynonym))
+	s.mux.HandleFunc("GET /api/export/markdown", s.requireAuth(model.RoleEditor, s.handleExportMarkdown))
+
+	// Admin-Konsole (Admin)
+	s.mux.HandleFunc("DELETE /api/articles/{id}/permanent", s.requireAuth(model.RoleAdmin, s.handlePermanentDeleteArticle))
+	s.mux.HandleFunc("GET /api/media/orphans", s.requireAuth(model.RoleAdmin, s.handleListOrphanMedia))
+	s.mux.HandleFunc("POST /api/media/cleanup", s.requireAuth(model.RoleAdmin, s.handleCleanupOrphanMedia))
+	s.mux.HandleFunc("PUT /api/settings", s.requireAuth(model.RoleAdmin, s.handleUpdateSettings))
+	s.mux.HandleFunc("DELETE /api/trash", s.requireAuth(model.RoleAdmin, s.handleEmptyTrash))
+	s.mux.HandleFunc("GET /api/backup/full", s.requireAuth(model.RoleAdmin, s.handleFullBackupDownload))
+	s.mux.HandleFunc("POST /api/backup/restore", s.requireAuth(model.RoleAdmin, s.handleFullBackupRestore))
+	s.mux.HandleFunc("GET /api/admin/users", s.requireAuth(model.RoleAdmin, s.handleAdminListUsers))
+	s.mux.HandleFunc("POST /api/admin/users", s.requireAuth(model.RoleAdmin, s.handleAdminCreateUser))
+	s.mux.HandleFunc("PUT /api/admin/users/{id}", s.requireAuth(model.RoleAdmin, s.handleAdminUpdateUser))
+	s.mux.HandleFunc("POST /api/admin/users/{id}/password", s.requireAuth(model.RoleAdmin, s.handleAdminResetUserPassword))
+	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAuth(model.RoleAdmin, s.handleAdminDeleteUser))
+	s.mux.HandleFunc("GET /api/admin/audit", s.requireAuth(model.RoleAdmin, s.handleAdminListAudit))
 
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -154,13 +177,18 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 			reminderDays = n
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"site_title":           siteTitle,
 		"version":              s.version,
-		"admin_protected":      s.cfg.AdminPassword != "",
+		"auth_required":        s.cfg.AuthRequired,
+		"admin_protected":      !s.cfg.AuthRequired && s.cfg.AdminPassword != "",
 		"review_reminder_days": reminderDays,
 		"categories":           cats,
-	})
+	}
+	if u := currentUser(r); u != nil {
+		resp["user"] = u
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {

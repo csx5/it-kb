@@ -19,6 +19,7 @@ func TestArticleCRUDConflictAndAdminProtection(t *testing.T) {
 	tmp := t.TempDir()
 	cfg := config.Default()
 	cfg.DataDir = tmp
+	cfg.AuthRequired = false
 	cfg.AdminPassword = "geheim-admin"
 	cfg.SeedDemoArticles = false
 

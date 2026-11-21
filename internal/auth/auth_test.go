@@ -1,0 +1,48 @@
+package auth
+
+import (
+	"testing"
+	"time"
+)
+
+func TestArgon2idHashAndVerify(t *testing.T) {
+	if _, err := HashPassword("kurz"); err == nil {
+		t.Fatalf("zu kurzes passwort hätte abgelehnt werden müssen")
+	}
+
+	h, err := HashPassword("Sicheres-IT-Passwort-2026!")
+	if err != nil {
+		t.Fatalf("hash error: %v", err)
+	}
+
+	ok, err := VerifyPassword("Sicheres-IT-Passwort-2026!", h)
+	if err != nil || !ok {
+		t.Fatalf("korrektes passwort nicht verifiziert: ok=%v err=%v", ok, err)
+	}
+
+	ok, err = VerifyPassword("Falsches-Passwort-2026!", h)
+	if err != nil || ok {
+		t.Fatalf("falsches passwort hätte abgelehnt werden müssen")
+	}
+}
+
+func TestLoginRateLimiter(t *testing.T) {
+	rl := NewLoginRateLimiter(3, 1*time.Minute, 2*time.Minute)
+	key := "192.168.1.10|admin"
+
+	for i := 0; i < 3; i++ {
+		if ok, _ := rl.Allow(key); !ok {
+			t.Fatalf("versuch %d sollte erlaubt sein", i+1)
+		}
+		rl.RecordFailure(key)
+	}
+
+	if ok, wait := rl.Allow(key); ok || wait <= 0 {
+		t.Fatalf("nach 3 fehlversuchen sollte gesperrt sein: ok=%v wait=%v", ok, wait)
+	}
+
+	rl.Reset(key)
+	if ok, _ := rl.Allow(key); !ok {
+		t.Fatalf("nach reset sollte wieder erlaubt sein")
+	}
+}

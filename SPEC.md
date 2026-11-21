@@ -58,6 +58,15 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] Unit- & Integrationstests für Tokenizer/BM25/Fuzzy/Synonyme, Artikel-CRUD/Optimistic Locking, Markdown-XSS/Video-Sanitizer, Medien-Whitelist/Attachment-Header/Orphan-Cleanup, Revisionen/Diff/Restore sowie Backup/Export/Zip-Slip
   - [x] Cross-Compile-Verifikation Linux (`amd64`/`arm64`) & Windows (`amd64`)
 
-### Optionale Weiterentwicklung (Version 2)
-- [ ] Benutzerkonten & Rollen (RBAC: `admin`, `editor`, `reader`) auf Basis der bereits im Schema angelegten Tabellen `users` und `sessions`
-- [ ] Passwort-Login & Sitzungsverwaltung (optional aktivierbar per Config)
+### Fertig (Version 2 – Authentifizierung, Rollen & Admin-Konsole)
+- [x] **Sichere Authentifizierung (`internal/auth`, `internal/db/users.go`, `internal/web/auth_handlers.go`):**
+  - [x] Argon2id-Passwort-Hashing (64 MiB, `t=3`, `p=2`, 16-Byte-Salt, Konstantzeit-Vergleich, min. 10 Zeichen)
+  - [x] 256-Bit-Session-Tokens in `HttpOnly`/`SameSite=Lax`/(bei TLS `Secure`)-Cookies, in SQLite ausschließlich als SHA-256-Hash gespeichert
+  - [x] Brute-Force-Rate-Limiting pro IP+Benutzername (5 Versuche / 5 Min.) und pro IP (15 Versuche / 5 Min.) + Dummy-Hash gegen Timing-Enumeration
+  - [x] CSRF-Schutz (`X-Requested-With` / `Sec-Fetch-Site`), Fail-Closed für alle Daten-, Medien- und Export-Endpunkte (`auth_required: true` als Standard)
+  - [x] Geführte Ersteinrichtung im Browser (`/api/auth/setup`, danach dauerhaft gesperrt) + optionales Headless-Bootstrap (`ITKB_BOOTSTRAP_ADMIN` / `ITKB_BOOTSTRAP_PASSWORD`)
+- [x] **Rollenmodell (RBAC) & Admin-Konsole:**
+  - [x] 3 Rollen: `admin` (Vollzugriff + Admin-Konsole), `editor` (Erstellen/Bearbeiten/Upload/Export/Synonyme/Kategorien), `reader` (Nur Lesen/Suchen/Historie)
+  - [x] Admin-Konsole mit Benutzerverwaltung (Anlegen, Rolle, Aktiv/Sperren inkl. sofortiger Session-Beendigung, Passwort-Reset, Löschen mit Schutz des letzten Admins) und Sicherheits-Audit-Log (`audit_log`, Migration `002_auth_audit.sql`)
+  - [x] Eigenes Passwort ändern (beendet automatisch alle anderen Sitzungen)
+  - [x] Umfassende Security- & RBAC-Tests (`internal/auth/auth_test.go`, `internal/web/auth_test.go`)

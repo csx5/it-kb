@@ -77,7 +77,7 @@ function renderDiffBlock(label, oldVal, newVal) {
   `;
 }
 
-export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta, reloadMeta, onRestoredArticle, showToast }) {
+export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta, getUser, canEdit, isAdmin, reloadMeta, onRestoredArticle, showToast }) {
   // --- Versionshistorie ---
   const revDialog = document.getElementById("revisions-dialog");
   const revList = document.getElementById("rev-list");
@@ -159,6 +159,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     }
 
     revRestoreBtn.textContent = `Version ${left.version} wiederherstellen`;
+    revRestoreBtn.classList.toggle("hidden", !canEdit());
     revRestoreBtn.disabled = left.version === activeRevisions[0].version;
 
     if (left.version === right.version) {
@@ -205,7 +206,20 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     onRestoredArticle(body.article.id);
   });
 
-  // --- Verwaltungs-Panel ---
+  // --- Verwaltungs-Panel & Admin-Konsole ---
+  const usersList = document.getElementById("admin-users-list");
+  const newUserName = document.getElementById("new-user-name");
+  const newUserDisplay = document.getElementById("new-user-display");
+  const newUserRole = document.getElementById("new-user-role");
+  const newUserPassword = document.getElementById("new-user-password");
+  const btnCreateUser = document.getElementById("btn-create-user");
+  const auditBody = document.getElementById("admin-audit-body");
+  const btnRefreshAudit = document.getElementById("btn-refresh-audit");
+
+  const tabBtnUsers = document.getElementById("tab-btn-users");
+  const tabBtnAudit = document.getElementById("tab-btn-audit");
+  const tabBtnMaintenance = document.getElementById("tab-btn-maintenance");
+
   const synList = document.getElementById("admin-syn-list");
   const synInput = document.getElementById("admin-syn-input");
   const synAddBtn = document.getElementById("admin-syn-add");
@@ -232,17 +246,182 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
 
   function adminHeaders() {
     const pw = (adminPwInput.value || "").trim();
-    return pw ? { "X-Admin-Password": pw } : {};
+    const h = { "X-Requested-With": "it-kb" };
+    if (pw) h["X-Admin-Password"] = pw;
+    return h;
+  }
+
+  function activateAdminTab(target) {
+    document.querySelectorAll("[data-admin-tab]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.adminTab === target);
+    });
+    document.querySelectorAll(".admin-tab-panel").forEach((p) => {
+      p.classList.toggle("hidden", p.id !== `admin-tab-${target}`);
+    });
   }
 
   async function refreshAdminView() {
     const meta = getMeta();
+    const adminAllowed = isAdmin();
+    const authOn = Boolean(meta.auth_required);
+
     setTitleInput.value = meta.site_title || "";
     setDaysInput.value = String(meta.review_reminder_days ?? 180);
     adminPwWrap.classList.toggle("hidden", !meta.admin_protected);
 
-    await Promise.all([loadSynonymsUI(), loadCategoriesUI()]);
+    tabBtnUsers.classList.toggle("hidden", !(authOn && adminAllowed));
+    tabBtnAudit.classList.toggle("hidden", !(authOn && adminAllowed));
+    tabBtnMaintenance.classList.toggle("hidden", !adminAllowed && authOn);
+
+    if (authOn && adminAllowed) {
+      activateAdminTab("users");
+      await Promise.all([loadUsersUI(), loadAuditUI(), loadSynonymsUI(), loadCategoriesUI()]);
+    } else {
+      activateAdminTab("synonyms");
+      await Promise.all([loadSynonymsUI(), loadCategoriesUI()]);
+    }
   }
+
+  async function loadUsersUI() {
+    const { ok, body } = await apiRequest("/api/admin/users");
+    if (!ok || !body?.users) return;
+    const me = getUser();
+    usersList.innerHTML = "";
+
+    for (const u of body.users) {
+      const row = document.createElement("div");
+      row.className = "admin-row";
+
+      const uname = document.createElement("span");
+      uname.className = "badge badge-code";
+      uname.textContent = u.username;
+
+      const disp = document.createElement("input");
+      disp.type = "text";
+      disp.value = u.display_name || "";
+      disp.placeholder = "Anzeigename";
+      disp.className = "admin-row-input";
+
+      const roleSel = document.createElement("select");
+      roleSel.innerHTML = `
+        <option value="admin">Administrator</option>
+        <option value="editor">Bearbeiter</option>
+        <option value="reader">Leser</option>
+      `;
+      roleSel.value = u.role;
+
+      const activeLabel = document.createElement("label");
+      activeLabel.className = "checkbox-inline";
+      const activeChk = document.createElement("input");
+      activeChk.type = "checkbox";
+      activeChk.checked = Boolean(u.is_active);
+      activeLabel.append(activeChk, document.createTextNode("Aktiv"));
+
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "btn btn-sm";
+      saveBtn.textContent = "Speichern";
+      saveBtn.addEventListener("click", async () => {
+        const res = await apiRequest(`/api/admin/users/${u.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            display_name: disp.value.trim(),
+            role: roleSel.value,
+            is_active: activeChk.checked,
+          }),
+        });
+        if (!res.ok) {
+          showToast(res.body?.error || "Speichern fehlgeschlagen");
+          return;
+        }
+        showToast(`Benutzer „${u.username}“ aktualisiert`);
+        loadUsersUI();
+        loadAuditUI();
+      });
+
+      const resetBtn = document.createElement("button");
+      resetBtn.type = "button";
+      resetBtn.className = "btn btn-sm";
+      resetBtn.textContent = "Passwort";
+      resetBtn.addEventListener("click", async () => {
+        const newPw = prompt(`Neues Passwort für „${u.username}“ (mindestens 10 Zeichen):`);
+        if (!newPw) return;
+        const res = await apiRequest(`/api/admin/users/${u.id}/password`, {
+          method: "POST",
+          body: JSON.stringify({ new_password: newPw }),
+        });
+        if (!res.ok) {
+          showToast(res.body?.error || "Passwort-Reset fehlgeschlagen");
+          return;
+        }
+        showToast(`Passwort für „${u.username}“ zurückgesetzt`);
+        loadAuditUI();
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn btn-sm btn-danger";
+      delBtn.textContent = "Löschen";
+      delBtn.disabled = Boolean(me && me.id === u.id);
+      delBtn.addEventListener("click", async () => {
+        if (!confirm(`Benutzerkonto „${u.username}“ wirklich dauerhaft löschen?`)) return;
+        const res = await apiRequest(`/api/admin/users/${u.id}`, { method: "DELETE" });
+        if (!res.ok) {
+          showToast(res.body?.error || "Löschen fehlgeschlagen");
+          return;
+        }
+        showToast(`Benutzer „${u.username}“ gelöscht`);
+        loadUsersUI();
+        loadAuditUI();
+      });
+
+      row.append(uname, disp, roleSel, activeLabel, saveBtn, resetBtn, delBtn);
+      usersList.appendChild(row);
+    }
+  }
+
+  btnCreateUser.addEventListener("click", async () => {
+    const res = await apiRequest("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify({
+        username: newUserName.value.trim(),
+        display_name: newUserDisplay.value.trim(),
+        role: newUserRole.value,
+        password: newUserPassword.value,
+      }),
+    });
+    if (!res.ok) {
+      showToast(res.body?.error || "Benutzer konnte nicht angelegt werden");
+      return;
+    }
+    newUserName.value = "";
+    newUserDisplay.value = "";
+    newUserPassword.value = "";
+    showToast(`Benutzer „${res.body.user.username}“ angelegt`);
+    loadUsersUI();
+    loadAuditUI();
+  });
+
+  async function loadAuditUI() {
+    const { ok, body } = await apiRequest("/api/admin/audit");
+    if (!ok || !body?.entries) return;
+    auditBody.innerHTML = "";
+    for (const e of body.entries) {
+      const tr = document.createElement("tr");
+      const timeStr = new Date(e.created_at).toLocaleString("de-DE");
+      tr.innerHTML = `
+        <td>${escapeHTML(timeStr)}</td>
+        <td>${escapeHTML(e.actor_name || "–")}</td>
+        <td><code>${escapeHTML(e.action)}</code></td>
+        <td>${escapeHTML(e.target || "–")}</td>
+        <td><code>${escapeHTML(e.ip_address || "–")}</code></td>
+        <td>${escapeHTML(e.details || "")}</td>
+      `;
+      auditBody.appendChild(tr);
+    }
+  }
+
+  btnRefreshAudit.addEventListener("click", loadAuditUI);
 
   async function loadSynonymsUI() {
     const { ok, body } = await apiRequest("/api/synonyms");
@@ -499,12 +678,10 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   // Tab-Umschaltung im Verwaltungs-Panel
   for (const tabBtn of document.querySelectorAll("[data-admin-tab]")) {
     tabBtn.addEventListener("click", () => {
-      document.querySelectorAll("[data-admin-tab]").forEach((b) => b.classList.remove("active"));
-      tabBtn.classList.add("active");
       const target = tabBtn.dataset.adminTab;
-      document.querySelectorAll(".admin-tab-panel").forEach((p) => {
-        p.classList.toggle("hidden", p.id !== `admin-tab-${target}`);
-      });
+      activateAdminTab(target);
+      if (target === "audit") loadAuditUI();
+      if (target === "users") loadUsersUI();
     });
   }
 

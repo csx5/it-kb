@@ -96,6 +96,17 @@ type User struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type AuditLogEntry struct {
+	ID          int64     `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	ActorUserID *int64    `json:"actor_user_id,omitempty"`
+	ActorName   string    `json:"actor_name"`
+	Action      string    `json:"action"`
+	Target      string    `json:"target"`
+	IPAddress   string    `json:"ip_address"`
+	Details     string    `json:"details"`
+}
+
 type SearchQuery struct {
 	Text           string `json:"q"`
 	CategoryID     *int64 `json:"category_id,omitempty"`

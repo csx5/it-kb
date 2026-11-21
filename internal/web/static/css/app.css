@@ -421,6 +421,100 @@ mark {
   color: var(--warn-text);
 }
 
+.banner-danger {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+/* Auth / Login / Setup */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.75rem 1.85rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.auth-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.btn-block {
+  width: 100%;
+  padding: 0.65rem 1rem;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.badge-user {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.modal-narrow {
+  max-width: 460px;
+}
+
+/* Audit-Log-Tabelle */
+.audit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.audit-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.audit-table th,
+.audit-table td {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-table th {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.audit-table td code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
 /* Editor */
 .editor-header {
   display: flex;
