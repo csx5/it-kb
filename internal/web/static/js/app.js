@@ -46,6 +46,7 @@ const els = {
   btnPwCancel: document.getElementById("btn-pw-cancel"),
   totpStatusText: document.getElementById("totp-status-text"),
   totpSetupArea: document.getElementById("totp-setup-area"),
+  totpQrImg: document.getElementById("totp-qr-img"),
   totpSecretCode: document.getElementById("totp-secret-code"),
   btnTotpCopy: document.getElementById("btn-totp-copy"),
   totpConfirmCode: document.getElementById("totp-confirm-code"),
@@ -77,6 +78,7 @@ const els = {
   btnEditorCancel: document.getElementById("btn-editor-cancel"),
   btnEditorSave: document.getElementById("btn-editor-save"),
   edTitle: document.getElementById("ed-title"),
+  edSnippetSelect: document.getElementById("ed-snippet-select"),
   edTemplate: document.getElementById("ed-template"),
   edCategory: document.getElementById("ed-category"),
   edStatus: document.getElementById("ed-status"),
@@ -121,6 +123,7 @@ const state = {
   editorDirty: false,
   activeTag: "",
   knownTags: [],
+  templates: [],
   currentHash: window.location.hash || "#",
   suppressHashOnce: false,
   linkTargetTextarea: null,
@@ -316,6 +319,20 @@ async function loadKnownTags() {
   }
 }
 
+async function loadTemplates() {
+  const { ok, body } = await apiRequest("/api/templates");
+  if (!ok || !Array.isArray(body?.templates)) return;
+  state.templates = body.templates;
+  els.edSnippetSelect.innerHTML = `<option value="">Textbaustein …</option>`;
+  for (const tpl of state.templates) {
+    const opt = document.createElement("option");
+    opt.value = String(tpl.id);
+    opt.textContent = tpl.name;
+    els.edSnippetSelect.appendChild(opt);
+  }
+  els.edSnippetSelect.classList.toggle("hidden", state.templates.length === 0);
+}
+
 async function loadMeta() {
   const { ok, body } = await apiRequest("/api/meta");
   if (!ok || !body) throw new Error("Metadaten konnten nicht geladen werden");
@@ -337,7 +354,7 @@ async function loadMeta() {
     o2.textContent = cat.name;
     els.edCategory.appendChild(o2);
   }
-  await loadKnownTags();
+  await Promise.all([loadKnownTags(), loadTemplates()]);
 }
 
 function renderActiveTagChip() {
@@ -1516,6 +1533,62 @@ function bindEvents() {
     openLinkArticlePicker(state.lastFocusedTextarea || els.edSolution, false);
   });
   els.btnLinkArticleCancel.addEventListener("click", () => els.linkArticleDialog.close());
+  els.edSnippetSelect.addEventListener("change", () => {
+    const id = Number(els.edSnippetSelect.value);
+    els.edSnippetSelect.value = "";
+    if (!id) return;
+    const tpl = state.templates.find((t) => t.id === id);
+    if (!tpl) return;
+    const hasInput = Boolean(
+      els.edTitle.value.trim() || els.edSymptoms.value.trim() || els.edSolution.value.trim()
+    );
+    if (hasInput && !confirm(`Vorlage „${tpl.name}“ auf aktuelle Eingaben anwenden?`)) {
+      return;
+    }
+
+    els.edTemplate.value = tpl.template_type || "problem_solution";
+    if (tpl.title_prefix) {
+      if (!els.edTitle.value.trim()) {
+        els.edTitle.value = tpl.title_prefix;
+      } else if (!els.edTitle.value.startsWith(tpl.title_prefix)) {
+        els.edTitle.value = `${tpl.title_prefix}${els.edTitle.value}`;
+      }
+    }
+    if (tpl.error_codes) {
+      els.edErrorCodes.value = els.edErrorCodes.value.trim()
+        ? `${els.edErrorCodes.value.trim()}, ${tpl.error_codes}`
+        : tpl.error_codes;
+    }
+    if (tpl.symptoms) {
+      els.edSymptoms.value = els.edSymptoms.value.trim()
+        ? `${els.edSymptoms.value.trim()}\n\n${tpl.symptoms}`
+        : tpl.symptoms;
+    }
+    if (tpl.solution_body) {
+      els.edSolution.value = els.edSolution.value.trim()
+        ? `${els.edSolution.value.trim()}\n\n${tpl.solution_body}`
+        : tpl.solution_body;
+    }
+    if (Array.isArray(tpl.tags) && tpl.tags.length > 0) {
+      const merged = [];
+      const seen = new Set();
+      for (const rawTag of [...els.edTags.value.split(","), ...tpl.tags]) {
+        const clean = rawTag.trim();
+        if (!clean) continue;
+        const lower = clean.toLowerCase();
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        merged.push(clean);
+      }
+      els.edTags.value = merged.join(", ");
+    }
+
+    syncTemplateFields();
+    renderTagSuggestions();
+    markEditorDirty();
+    refreshPreview();
+    showToast(`Textbaustein „${tpl.name}“ angewendet`);
+  });
   els.linkArticleSearch.addEventListener("input", () => {
     clearTimeout(linkSearchTimer);
     linkSearchTimer = setTimeout(() => searchLinkArticles(els.linkArticleSearch.value), 120);
@@ -1652,6 +1725,11 @@ const adminUI = createAdminAndHistoryController({
   canEdit,
   isAdmin,
   reloadMeta: loadMeta,
+  onTemplatesChanged: loadTemplates,
+  onImported: async () => {
+    await loadMeta();
+    await runSearch();
+  },
   onRestoredArticle: (id) => openArticle(id),
   showToast,
 });
@@ -1692,6 +1770,8 @@ function updateTOTPDialogState() {
   const enabled = Boolean(state.user && state.user.totp_enabled);
   els.totpStatusText.textContent = enabled ? "Status: Aktiv" : "Status: Nicht aktiviert";
   els.totpSetupArea.classList.add("hidden");
+  els.totpQrImg.src = "";
+  els.totpQrImg.classList.add("hidden");
   els.btnTotpStart.classList.toggle("hidden", enabled);
   els.btnTotpDisable.classList.toggle("hidden", !enabled);
 }
@@ -1812,6 +1892,13 @@ function bindAuthEvents() {
       return;
     }
     els.totpSecretCode.textContent = body.secret;
+    if (body.qr_data_uri) {
+      els.totpQrImg.src = body.qr_data_uri;
+      els.totpQrImg.classList.remove("hidden");
+    } else {
+      els.totpQrImg.src = "";
+      els.totpQrImg.classList.add("hidden");
+    }
     els.totpSetupArea.classList.remove("hidden");
     els.btnTotpStart.classList.add("hidden");
     els.totpConfirmCode.focus();

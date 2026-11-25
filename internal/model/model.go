@@ -143,3 +143,17 @@ type TagCount struct {
 	Tag   string `json:"tag"`
 	Count int    `json:"count"`
 }
+
+type ArticleTemplate struct {
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	TemplateType string    `json:"template_type"`
+	TitlePrefix  string    `json:"title_prefix"`
+	ErrorCodes   string    `json:"error_codes"`
+	Symptoms     string    `json:"symptoms"`
+	SolutionBody string    `json:"solution_body"`
+	Tags         []string  `json:"tags"`
+	SortOrder    int       `json:"sort_order"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}

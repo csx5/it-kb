@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,5 +68,11 @@ func TestTOTPGenerateAndVerify(t *testing.T) {
 	}
 	if VerifyTOTPCode(secret, "000000", now) && code != "000000" {
 		t.Fatalf("falscher totp-code akzeptiert")
+	}
+
+	uri := BuildTOTPURI("IT-KB", "admin", secret)
+	dataURI, err := BuildTOTPQRDataURI(uri)
+	if err != nil || !strings.HasPrefix(dataURI, "data:image/svg+xml;base64,") {
+		t.Fatalf("qr data uri ungültig: err=%v prefix=%q", err, dataURI)
 	}
 }

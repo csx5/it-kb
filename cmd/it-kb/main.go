@@ -139,6 +139,27 @@ func startServer(ctx context.Context, cfg config.Config) error {
 		}
 	}()
 
+	if cfg.AutoBackupDir != "" && cfg.AutoBackupIntervalHours > 0 {
+		go func() {
+			interval := time.Duration(cfg.AutoBackupIntervalHours) * time.Hour
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					outPath, bErr := backup.RunScheduledBackup(ctx, store, cfg.MediaDir(), cfg.AutoBackupDir, cfg.AutoBackupPassphrase, cfg.AutoBackupKeep)
+					if bErr != nil {
+						log.Printf("Automatisches Backup fehlgeschlagen: %v", bErr)
+					} else {
+						log.Printf("Automatisches Backup erstellt: %s", outPath)
+					}
+				}
+			}
+		}()
+	}
+
 	if cfg.BootstrapAdmin != "" && cfg.BootstrapPassword != "" {
 		if n, err := store.CountUsers(ctx); err == nil && n == 0 {
 			hash, err := auth.HashPassword(cfg.BootstrapPassword)
@@ -275,16 +296,25 @@ func runBackup(args []string) {
 	if err := backup.CreateFullBackup(context.Background(), store, cfg.MediaDir(), tmpZip); err != nil {
 		log.Fatalf("Backup fehlgeschlagen: %v", err)
 	}
-	plain, err := os.ReadFile(tmpZip)
+	srcFile, err := os.Open(tmpZip)
 	if err != nil {
-		log.Fatalf("Temporäres Backup lesen: %v", err)
+		log.Fatalf("Temporäres Backup öffnen: %v", err)
 	}
-	enc, err := backup.EncryptBytes(plain, pw)
+	defer srcFile.Close()
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o750); err != nil {
+		log.Fatalf("Zielverzeichnis anlegen: %v", err)
+	}
+	dstFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
+		log.Fatalf("Verschlüsseltes Backup anlegen: %v", err)
+	}
+	if err := backup.EncryptStream(srcFile, dstFile, pw); err != nil {
+		_ = dstFile.Close()
+		_ = os.Remove(outPath)
 		log.Fatalf("Backup verschlüsseln: %v", err)
 	}
-	if err := os.WriteFile(outPath, enc, 0o600); err != nil {
-		log.Fatalf("Verschlüsseltes Backup schreiben: %v", err)
+	if err := dstFile.Close(); err != nil {
+		log.Fatalf("Verschlüsseltes Backup schließen: %v", err)
 	}
 	log.Printf("Verschlüsseltes Voll-Backup (AES-256-GCM) erstellt: %s", outPath)
 }

@@ -190,7 +190,7 @@ func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 	for _, id := range ids {
 		s.engine.RemoveArticle(id)
 	}
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "trash_emptied", "trash", clientIP(r), strconv.Itoa(len(ids))+" Artikel gelöscht")
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "trash_emptied", "trash", s.clientIP(r), strconv.Itoa(len(ids))+" Artikel gelöscht")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": len(ids)})
 }
 

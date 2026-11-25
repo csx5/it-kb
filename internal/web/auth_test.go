@@ -10,9 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/csx5/it-kb/internal/auth"
 	"github.com/csx5/it-kb/internal/config"
 	"github.com/csx5/it-kb/internal/db"
 	"github.com/csx5/it-kb/internal/search"
+	"time"
 )
 
 func TestAuthFailClosedRBACCSRFRateLimitAndRevocation(t *testing.T) {
@@ -200,4 +202,86 @@ func doAuthJSON(h http.Handler, cookie *http.Cookie, method, path, body string) 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+func TestTrustedProxiesAndTOTPDBReplayProtection(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.AuthRequired = true
+	cfg.TrustedProxies = []string{"127.0.0.1/32", "10.10.0.0/24"}
+
+	store, err := db.Open(cfg.DBPath())
+	if err != nil {
+		t.Fatalf("db öffnen: %v", err)
+	}
+	defer store.Close()
+	_ = store.SeedInitialData(context.Background())
+
+	eng := search.NewEngine(180)
+	srv, err := NewServer(cfg, store, eng, "test")
+	if err != nil {
+		t.Fatalf("server: %v", err)
+	}
+
+	// 1. Nicht vertrauenswürdige IP darf X-Forwarded-For / X-Forwarded-Proto nicht fälschen
+	untrustedReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	untrustedReq.RemoteAddr = "198.51.100.44:54321"
+	untrustedReq.Header.Set("X-Forwarded-For", "1.2.3.4")
+	untrustedReq.Header.Set("X-Forwarded-Proto", "https")
+	if got := srv.clientIP(untrustedReq); got != "198.51.100.44" {
+		t.Fatalf("untrusted X-Forwarded-For akzeptiert: %s", got)
+	}
+	if srv.isRequestHTTPS(untrustedReq) {
+		t.Fatalf("untrusted X-Forwarded-Proto=https akzeptiert")
+	}
+
+	// 2. Vertrauenswürdiger Proxy darf X-Forwarded-For (von rechts) & X-Forwarded-Proto liefern
+	trustedReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	trustedReq.RemoteAddr = "127.0.0.1:4444"
+	trustedReq.Header.Set("X-Forwarded-For", "9.9.9.9, 203.0.113.77, 10.10.0.5")
+	trustedReq.Header.Set("X-Forwarded-Proto", "https")
+	if got := srv.clientIP(trustedReq); got != "203.0.113.77" {
+		t.Fatalf("trusted XFF lieferte %s statt 203.0.113.77", got)
+	}
+	if !srv.isRequestHTTPS(trustedReq) {
+		t.Fatalf("trusted X-Forwarded-Proto=https ignoriert")
+	}
+
+	// 3. TOTP-Setup liefert Offline-SVG-QR & Replay-Schutz bleibt nach Server-Neustart in DB erhalten
+	h := srv.Handler()
+	adminCookie := doAuthJSON(h, nil, http.MethodPost, "/api/auth/setup", `{"username":"admin","display_name":"Admin","password":"SuperSicherAdmin2026!"}`)
+	cookie := extractSessionCookie(t, adminCookie)
+
+	setupRec := doAuthJSON(h, cookie, http.MethodPost, "/api/auth/totp/setup", `{}`)
+	if setupRec.Code != http.StatusOK {
+		t.Fatalf("totp setup: %d %s", setupRec.Code, setupRec.Body.String())
+	}
+	var totpData struct {
+		Secret    string `json:"secret"`
+		URI       string `json:"uri"`
+		QRDataURI string `json:"qr_data_uri"`
+	}
+	_ = json.Unmarshal(setupRec.Body.Bytes(), &totpData)
+	if totpData.Secret == "" || !strings.HasPrefix(totpData.QRDataURI, "data:image/svg+xml;base64,") {
+		t.Fatalf("totp qr data uri fehlt: %+v", totpData)
+	}
+
+	code, err := auth.GenerateTOTPCode(totpData.Secret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("totp code: %v", err)
+	}
+	enRec := doAuthJSON(h, cookie, http.MethodPost, "/api/auth/totp/enable", `{"code":"`+code+`"}`)
+	if enRec.Code != http.StatusOK {
+		t.Fatalf("totp enable: %d %s", enRec.Code, enRec.Body.String())
+	}
+
+	// Neue Server-Instanz auf derselben SQLite-DB -> gleicher TOTP-Code muss als Replay abgelehnt werden!
+	srv2, err := NewServer(cfg, store, eng, "test")
+	if err != nil {
+		t.Fatalf("server2: %v", err)
+	}
+	replayRec := doAuthJSON(srv2.Handler(), nil, http.MethodPost, "/api/auth/login", `{"username":"admin","password":"SuperSicherAdmin2026!","totp_code":"`+code+`"}`)
+	if replayRec.Code != http.StatusUnauthorized {
+		t.Fatalf("erwartete 401 bei persistentem TOTP-Replay nach Neustart, erhalten %d (%s)", replayRec.Code, replayRec.Body.String())
+	}
 }

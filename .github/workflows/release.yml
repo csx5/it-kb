@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: Tests vor Release ausführen
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Release-Binaries bauen
+        run: |
+          VERSION="${GITHUB_REF_NAME}" make build-linux build-windows
+          sha256sum dist/it-kb-* > dist/SHA256SUMS.txt
+
+      - name: GitHub Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/it-kb-linux-amd64
+            dist/it-kb-linux-arm64
+            dist/it-kb-windows-amd64.exe
+            dist/SHA256SUMS.txt
+          generate_release_notes: true

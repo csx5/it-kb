@@ -77,7 +77,7 @@ function renderDiffBlock(label, oldVal, newVal) {
   `;
 }
 
-export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta, getUser, canEdit, isAdmin, reloadMeta, onRestoredArticle, showToast }) {
+export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta, getUser, canEdit, isAdmin, reloadMeta, onTemplatesChanged, onImported, onRestoredArticle, showToast }) {
   // --- Versionshistorie ---
   const revDialog = document.getElementById("revisions-dialog");
   const revList = document.getElementById("rev-list");
@@ -234,6 +234,17 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   const catOrder = document.getElementById("admin-cat-order");
   const catAddBtn = document.getElementById("admin-cat-add");
 
+  const tplList = document.getElementById("admin-tpl-list");
+  const tplName = document.getElementById("admin-tpl-name");
+  const tplType = document.getElementById("admin-tpl-type");
+  const tplPrefix = document.getElementById("admin-tpl-prefix");
+  const tplError = document.getElementById("admin-tpl-error");
+  const tplTags = document.getElementById("admin-tpl-tags");
+  const tplOrder = document.getElementById("admin-tpl-order");
+  const tplSymptoms = document.getElementById("admin-tpl-symptoms");
+  const tplSolution = document.getElementById("admin-tpl-solution");
+  const tplAddBtn = document.getElementById("admin-tpl-add");
+
   const setTitleInput = document.getElementById("admin-site-title");
   const setDaysInput = document.getElementById("admin-reminder-days");
   const setSaveBtn = document.getElementById("admin-settings-save");
@@ -244,6 +255,8 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
   const btnCheckOrphans = document.getElementById("btn-check-orphans");
   const btnCleanOrphans = document.getElementById("btn-clean-orphans");
   const btnEmptyTrash = document.getElementById("btn-empty-trash");
+  const btnImportMd = document.getElementById("btn-import-md");
+  const importMdInput = document.getElementById("import-md-input");
   const btnBackupFull = document.getElementById("btn-backup-full");
   const btnRestoreBackup = document.getElementById("btn-restore-backup");
   const restoreBackupInput = document.getElementById("restore-backup-input");
@@ -288,10 +301,10 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
 
     if (authOn && adminAllowed) {
       activateAdminTab("users");
-      await Promise.all([loadUsersUI(), loadAuditUI(), loadSynonymsUI(), loadCategoriesUI()]);
+      await Promise.all([loadUsersUI(), loadAuditUI(), loadSynonymsUI(), loadCategoriesUI(), loadTemplatesUI()]);
     } else {
       activateAdminTab("synonyms");
-      await Promise.all([loadSynonymsUI(), loadCategoriesUI()]);
+      await Promise.all([loadSynonymsUI(), loadCategoriesUI(), loadTemplatesUI()]);
     }
   }
 
@@ -615,6 +628,148 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     loadCategoriesUI();
   });
 
+  async function loadTemplatesUI() {
+    const { ok, body } = await apiRequest("/api/templates");
+    if (!ok || !Array.isArray(body?.templates)) return;
+    tplList.innerHTML = "";
+    if (body.templates.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hit-snippet";
+      empty.textContent = "Noch keine eigenen Vorlagen angelegt.";
+      tplList.appendChild(empty);
+      return;
+    }
+
+    for (const tpl of body.templates) {
+      const card = document.createElement("div");
+      card.className = "tpl-card";
+
+      const grid = document.createElement("div");
+      grid.className = "tpl-form-grid";
+
+      const nameInp = document.createElement("input");
+      nameInp.type = "text";
+      nameInp.value = tpl.name || "";
+      nameInp.placeholder = "Name *";
+
+      const typeSel = document.createElement("select");
+      typeSel.innerHTML = `<option value="problem_solution">Problem &amp; Lösung</option><option value="howto">Anleitung / How-To</option>`;
+      typeSel.value = tpl.template_type || "problem_solution";
+
+      const prefixInp = document.createElement("input");
+      prefixInp.type = "text";
+      prefixInp.value = tpl.title_prefix || "";
+      prefixInp.placeholder = "Titel-Präfix";
+
+      const errInp = document.createElement("input");
+      errInp.type = "text";
+      errInp.value = tpl.error_codes || "";
+      errInp.placeholder = "Fehlercode";
+
+      const tagsInp = document.createElement("input");
+      tagsInp.type = "text";
+      tagsInp.value = (tpl.tags || []).join(", ");
+      tagsInp.placeholder = "Tags";
+
+      const orderInp = document.createElement("input");
+      orderInp.type = "number";
+      orderInp.className = "admin-order-input";
+      orderInp.value = String(tpl.sort_order ?? 50);
+
+      grid.append(nameInp, typeSel, prefixInp, errInp, tagsInp, orderInp);
+
+      const areaGrid = document.createElement("div");
+      areaGrid.className = "tpl-form-grid tpl-form-areas";
+      const symInp = document.createElement("textarea");
+      symInp.rows = 3;
+      symInp.value = tpl.symptoms || "";
+      symInp.placeholder = "Symptome / Ursache";
+      const solInp = document.createElement("textarea");
+      solInp.rows = 3;
+      solInp.value = tpl.solution_body || "";
+      solInp.placeholder = "Lösung / Anleitung";
+      areaGrid.append(symInp, solInp);
+
+      const actions = document.createElement("div");
+      actions.className = "tpl-card-actions";
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "btn btn-sm";
+      saveBtn.textContent = "Speichern";
+      saveBtn.addEventListener("click", async () => {
+        const res = await apiRequest(`/api/templates/${tpl.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            name: nameInp.value.trim(),
+            template_type: typeSel.value,
+            title_prefix: prefixInp.value,
+            error_codes: errInp.value.trim(),
+            tags: tagsInp.value.split(",").map((s) => s.trim()).filter(Boolean),
+            sort_order: Number(orderInp.value) || 50,
+            symptoms: symInp.value,
+            solution_body: solInp.value,
+          }),
+        });
+        if (!res.ok) {
+          showToast(res.body?.error || "Vorlage konnte nicht gespeichert werden");
+          return;
+        }
+        showToast(`Vorlage „${res.body.template.name}“ gespeichert`);
+        await loadTemplatesUI();
+        if (onTemplatesChanged) await onTemplatesChanged();
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn btn-sm btn-danger";
+      delBtn.textContent = "Löschen";
+      delBtn.addEventListener("click", async () => {
+        if (!confirm(`Vorlage „${tpl.name}“ wirklich löschen?`)) return;
+        const res = await apiRequest(`/api/templates/${tpl.id}`, { method: "DELETE" });
+        if (!res.ok) {
+          showToast(res.body?.error || "Vorlage konnte nicht gelöscht werden");
+          return;
+        }
+        showToast("Vorlage gelöscht");
+        await loadTemplatesUI();
+        if (onTemplatesChanged) await onTemplatesChanged();
+      });
+
+      actions.append(saveBtn, delBtn);
+      card.append(grid, areaGrid, actions);
+      tplList.appendChild(card);
+    }
+  }
+
+  tplAddBtn.addEventListener("click", async () => {
+    const res = await apiRequest("/api/templates", {
+      method: "POST",
+      body: JSON.stringify({
+        name: tplName.value.trim(),
+        template_type: tplType.value,
+        title_prefix: tplPrefix.value,
+        error_codes: tplError.value.trim(),
+        tags: tplTags.value.split(",").map((s) => s.trim()).filter(Boolean),
+        sort_order: tplOrder.value === "" ? 50 : Number(tplOrder.value),
+        symptoms: tplSymptoms.value,
+        solution_body: tplSolution.value,
+      }),
+    });
+    if (!res.ok) {
+      showToast(res.body?.error || "Vorlage konnte nicht angelegt werden");
+      return;
+    }
+    tplName.value = "";
+    tplPrefix.value = "";
+    tplError.value = "";
+    tplTags.value = "";
+    tplSymptoms.value = "";
+    tplSolution.value = "";
+    showToast(`Vorlage „${res.body.template.name}“ angelegt`);
+    await loadTemplatesUI();
+    if (onTemplatesChanged) await onTemplatesChanged();
+  });
+
   setSaveBtn.addEventListener("click", async () => {
     const res = await apiRequest("/api/settings", {
       method: "PUT",
@@ -705,6 +860,35 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
     }
   });
 
+  btnImportMd.addEventListener("click", () => importMdInput.click());
+  importMdInput.addEventListener("change", async () => {
+    const file = importMdInput.files?.[0];
+    importMdInput.value = "";
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    showToast("Markdown-Import läuft …");
+    const res = await fetch("/api/import/markdown", {
+      method: "POST",
+      headers: { "X-Requested-With": "it-kb" },
+      body: fd,
+    });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {}
+    if (!res.ok) {
+      showToast(body?.error || `Import fehlgeschlagen (HTTP ${res.status})`);
+      return;
+    }
+    const count = body?.articles_imported ?? 1;
+    const mediaCount = body?.media_imported ?? 0;
+    showToast(`Importiert: ${count} Artikel${mediaCount ? `, ${mediaCount} Medien` : ""}`);
+    await loadCategoriesUI();
+    await loadSynonymsUI();
+    if (onImported) await onImported();
+  });
+
   btnRestoreBackup.addEventListener("click", () => restoreBackupInput.click());
   restoreBackupInput.addEventListener("change", async () => {
     const file = restoreBackupInput.files?.[0];
@@ -750,6 +934,7 @@ export function createAdminAndHistoryController({ apiRequest, getAuthor, getMeta
       activateAdminTab(target);
       if (target === "audit") loadAuditUI();
       if (target === "users") loadUsersUI();
+      if (target === "templates") loadTemplatesUI();
     });
   }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,16 +35,19 @@ type Server struct {
 	locks        *LockManager
 	userLimiter  *auth.LoginRateLimiter
 	ipLimiter    *auth.LoginRateLimiter
-	restoreMu    sync.RWMutex
-	setupMu      sync.Mutex
-	totpMu       sync.Mutex
-	lastTOTPStep map[int64]int64
-	orphanMinAge time.Duration
-	mux          *http.ServeMux
-	version      string
+	restoreMu        sync.RWMutex
+	setupMu          sync.Mutex
+	trustedProxyNets []*net.IPNet
+	orphanMinAge     time.Duration
+	mux              *http.ServeMux
+	version          string
 }
 
 func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, version string) (*Server, error) {
+	proxyNets, err := config.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
 		cfg:    cfg,
 		store:  store,
@@ -54,13 +58,13 @@ func NewServer(cfg config.Config, store *db.Store, engine *search.Engine, versio
 			MaxVideoBytes:      cfg.MaxVideoMB * 1024 * 1024,
 			MaxAttachmentBytes: cfg.MaxAttachmentMB * 1024 * 1024,
 		}),
-		locks:        NewLockManager(35 * time.Second),
-		userLimiter:  auth.NewLoginRateLimiter(5, 5*time.Minute, 5*time.Minute),
-		ipLimiter:    auth.NewLoginRateLimiter(15, 5*time.Minute, 5*time.Minute),
-		lastTOTPStep: make(map[int64]int64),
-		orphanMinAge: time.Hour,
-		mux:          http.NewServeMux(),
-		version:      version,
+		locks:            NewLockManager(35 * time.Second),
+		userLimiter:      auth.NewLoginRateLimiter(5, 5*time.Minute, 5*time.Minute),
+		ipLimiter:        auth.NewLoginRateLimiter(15, 5*time.Minute, 5*time.Minute),
+		trustedProxyNets: proxyNets,
+		orphanMinAge:     time.Hour,
+		mux:              http.NewServeMux(),
+		version:          version,
 	}
 
 	if err := s.registerRoutes(); err != nil {
@@ -109,6 +113,7 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("GET /api/categories", s.requireAuth(model.RoleReader, s.handleListCategories))
 	s.mux.HandleFunc("GET /api/synonyms", s.requireAuth(model.RoleReader, s.handleListSynonyms))
 	s.mux.HandleFunc("GET /api/tags", s.requireAuth(model.RoleReader, s.handleListTags))
+	s.mux.HandleFunc("GET /api/templates", s.requireAuth(model.RoleReader, s.handleListTemplates))
 
 	// Bearbeiten (Editor+)
 	s.mux.HandleFunc("POST /api/preview", s.requireAuth(model.RoleEditor, s.handlePreviewMarkdown))
@@ -130,6 +135,10 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("PUT /api/synonyms/{id}", s.requireAuth(model.RoleEditor, s.handleUpdateSynonym))
 	s.mux.HandleFunc("DELETE /api/synonyms/{id}", s.requireAuth(model.RoleEditor, s.handleDeleteSynonym))
 	s.mux.HandleFunc("GET /api/export/markdown", s.requireAuth(model.RoleEditor, s.handleExportMarkdown))
+	s.mux.HandleFunc("POST /api/import/markdown", s.requireAuth(model.RoleEditor, s.handleImportMarkdown))
+	s.mux.HandleFunc("POST /api/templates", s.requireAuth(model.RoleEditor, s.handleCreateTemplate))
+	s.mux.HandleFunc("PUT /api/templates/{id}", s.requireAuth(model.RoleEditor, s.handleUpdateTemplate))
+	s.mux.HandleFunc("DELETE /api/templates/{id}", s.requireAuth(model.RoleEditor, s.handleDeleteTemplate))
 
 	// Admin-Konsole (Admin)
 	s.mux.HandleFunc("DELETE /api/articles/{id}/permanent", s.requireAuth(model.RoleAdmin, s.handlePermanentDeleteArticle))
@@ -174,7 +183,7 @@ func (s *Server) RequireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		ip := clientIP(r)
+		ip := s.clientIP(r)
 		if ok, wait := s.ipLimiter.Allow("adminpw|" + ip); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 			writeError(w, http.StatusTooManyRequests, "Zu viele Fehlversuche")

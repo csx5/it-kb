@@ -6,11 +6,14 @@ import (
 	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"net/url"
 	"strings"
 	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 const totpPeriodSeconds = 30
@@ -81,4 +84,32 @@ func VerifyTOTPCodeStep(secret, code string, now time.Time) (bool, int64) {
 		}
 	}
 	return false, 0
+}
+
+// BuildTOTPQRDataURI erzeugt einen offline gerenderten QR-Code als SVG-Data-URI (ohne externe Dienste).
+func BuildTOTPQRDataURI(uri string) (string, error) {
+	qr, err := qrcode.New(uri, qrcode.Medium)
+	if err != nil {
+		return "", err
+	}
+	bitmap := qr.Bitmap()
+	n := len(bitmap)
+	if n == 0 {
+		return "", fmt.Errorf("leere qr-matrix")
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges">`, n, n)
+	fmt.Fprintf(&b, `<rect width="%d" height="%d" fill="#ffffff"/>`, n, n)
+	b.WriteString(`<path fill="#000000" d="`)
+	for y, row := range bitmap {
+		for x, dark := range row {
+			if dark {
+				fmt.Fprintf(&b, "M%d %dh1v1h-1z", x, y)
+			}
+		}
+	}
+	b.WriteString(`"/></svg>`)
+	encoded := base64.StdEncoding.EncodeToString([]byte(b.String()))
+	return "data:image/svg+xml;base64," + encoded, nil
 }

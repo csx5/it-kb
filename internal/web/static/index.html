@@ -128,6 +128,9 @@
           <div class="editor-header">
             <h2 id="editor-heading">Neuer Artikel</h2>
             <div class="editor-header-actions">
+              <select id="ed-snippet-select" class="btn btn-sm hidden" aria-label="Textbaustein anwenden">
+                <option value="">Textbaustein …</option>
+              </select>
               <div class="segmented" role="group" aria-label="Editor-Ansicht">
                 <button type="button" class="seg-btn" data-view="write">Schreiben</button>
                 <button type="button" class="seg-btn active" data-view="split">Split</button>
@@ -237,6 +240,7 @@
                 <button type="button" class="seg-btn" data-admin-tab="audit" id="tab-btn-audit">Sicherheits-Log</button>
                 <button type="button" class="seg-btn" data-admin-tab="synonyms" id="tab-btn-synonyms">Synonyme</button>
                 <button type="button" class="seg-btn" data-admin-tab="categories" id="tab-btn-categories">Kategorien</button>
+                <button type="button" class="seg-btn" data-admin-tab="templates" id="tab-btn-templates">Vorlagen</button>
                 <button type="button" class="seg-btn" data-admin-tab="maintenance" id="tab-btn-maintenance">Wartung &amp; Backup</button>
               </div>
               <button type="button" id="btn-admin-close" class="btn">Zurück</button>
@@ -311,6 +315,29 @@
             <div id="admin-cat-list" class="admin-list"></div>
           </div>
 
+          <div id="admin-tab-templates" class="admin-tab-panel hidden">
+            <div class="admin-card">
+              <h3>Neue Vorlage / Textbaustein</h3>
+              <div class="tpl-form-grid">
+                <input type="text" id="admin-tpl-name" placeholder="Vorlagenname *">
+                <select id="admin-tpl-type">
+                  <option value="problem_solution">Problem &amp; Lösung</option>
+                  <option value="howto">Anleitung / How-To</option>
+                </select>
+                <input type="text" id="admin-tpl-prefix" placeholder="Titel-Präfix (optional)">
+                <input type="text" id="admin-tpl-error" placeholder="Fehlercode (optional)">
+                <input type="text" id="admin-tpl-tags" placeholder="Standard-Tags (kommagetrennt)">
+                <input type="number" id="admin-tpl-order" class="admin-order-input" value="50" title="Sortierreihenfolge">
+              </div>
+              <div class="tpl-form-grid tpl-form-areas">
+                <textarea id="admin-tpl-symptoms" rows="3" placeholder="Vorlage Symptome / Ursache"></textarea>
+                <textarea id="admin-tpl-solution" rows="3" placeholder="Vorlage Lösung / Anleitung"></textarea>
+              </div>
+              <button type="button" id="admin-tpl-add" class="btn btn-primary">Vorlage anlegen</button>
+            </div>
+            <div id="admin-tpl-list" class="admin-list"></div>
+          </div>
+
           <div id="admin-tab-maintenance" class="admin-tab-panel hidden">
             <div class="admin-card" id="admin-settings-card">
               <h3>Einstellungen</h3>
@@ -345,6 +372,8 @@
               </label>
               <div class="detail-actions" id="admin-backup-actions">
                 <a href="/api/export/markdown" id="btn-export-md" class="btn">Markdown-Export (ZIP)</a>
+                <button type="button" id="btn-import-md" class="btn">Markdown-Import (.md / .zip)</button>
+                <input type="file" id="import-md-input" accept=".md,.markdown,.zip" class="hidden">
                 <a href="/api/backup/full" id="btn-backup-full" class="btn btn-primary">Voll-Backup</a>
                 <button type="button" id="btn-restore-backup" class="btn btn-danger">Backup wiederherstellen</button>
                 <input type="file" id="restore-backup-input" accept=".zip,.enc" class="hidden">
@@ -470,7 +499,10 @@
           <h4>Zwei-Faktor-Authentifizierung (TOTP)</h4>
           <p id="totp-status-text" class="modal-desc"></p>
           <div id="totp-setup-area" class="hidden">
-            <p class="modal-desc">Schlüssel in Authenticator-App eintragen:</p>
+            <p class="modal-desc">QR-Code scannen oder Schlüssel in Authenticator-App eintragen:</p>
+            <div class="totp-qr-wrap">
+              <img id="totp-qr-img" alt="2FA QR-Code" class="totp-qr-img hidden">
+            </div>
             <div class="totp-secret-row">
               <code id="totp-secret-code" class="badge badge-code"></code>
               <button type="button" id="btn-totp-copy" class="btn btn-sm">Kopieren</button>

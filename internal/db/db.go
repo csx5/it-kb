@@ -134,6 +134,7 @@ func (s *Store) migrate() error {
 		{1, "migrations/001_init.sql"},
 		{2, "migrations/002_auth_audit.sql"},
 		{3, "migrations/003_v3_features.sql"},
+		{4, "migrations/004_v110_features.sql"},
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)

@@ -51,12 +51,58 @@ func actorUserID(r *http.Request) *int64 {
 	return nil
 }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+func remoteHost(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
 	if err != nil {
-		return strings.TrimSpace(r.RemoteAddr)
+		return strings.Trim(strings.TrimSpace(remoteAddr), "[]")
 	}
 	return host
+}
+
+func (s *Server) isTrustedProxy(ipStr string) bool {
+	if len(s.trustedProxyNets) == 0 {
+		return false
+	}
+	ip := net.ParseIP(strings.TrimSpace(ipStr))
+	if ip == nil {
+		return false
+	}
+	for _, n := range s.trustedProxyNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) clientIP(r *http.Request) string {
+	host := remoteHost(r.RemoteAddr)
+	if !s.isTrustedProxy(host) {
+		return host
+	}
+	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if xff == "" {
+		return host
+	}
+	// Von rechts nach links prüfen und vertrauenswürdige Proxies überspringen (Schutz vor Spoofing)
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip := net.ParseIP(strings.TrimSpace(parts[i]))
+		if ip == nil {
+			continue
+		}
+		if !s.isTrustedProxy(ip.String()) {
+			return ip.String()
+		}
+	}
+	return host
+}
+
+func (s *Server) isRequestHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return s.isTrustedProxy(remoteHost(r.RemoteAddr)) && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func roleRank(role string) int {
@@ -128,7 +174,7 @@ func isSameOriginCSRFValid(r *http.Request) bool {
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, rawToken string, expires time.Time) {
-	isSecure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	isSecure := s.isRequestHTTPS(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    rawToken,
@@ -141,7 +187,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, rawTok
 }
 
 func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	isSecure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	isSecure := s.isRequestHTTPS(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
@@ -255,7 +301,7 @@ func (s *Server) handleInitialAdminSetup(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.setSessionCookie(w, r, rawToken, expires)
-	s.store.WriteAuditLog(r.Context(), &user.ID, user.DisplayName, "setup_admin", user.Username, clientIP(r), "Erster Administrator angelegt")
+	s.store.WriteAuditLog(r.Context(), &user.ID, user.DisplayName, "setup_admin", user.Username, s.clientIP(r), "Erster Administrator angelegt")
 	writeJSON(w, http.StatusCreated, map[string]any{"user": user})
 }
 
@@ -275,7 +321,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := strings.ToLower(strings.TrimSpace(body.Username))
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	userKey := ip + "|" + username
 
 	if ok, wait := s.userLimiter.Allow(userKey); !ok {
@@ -323,7 +369,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ok, step := auth.VerifyTOTPCodeStep(userWithHash.TOTPSecret, body.TOTPCode, time.Now().UTC())
-		if !ok || !s.consumeTOTPStep(userWithHash.ID, step) {
+		consumed := false
+		if ok {
+			consumed, _ = s.store.ConsumeUserTOTPStep(r.Context(), userWithHash.ID, step)
+		}
+		if !ok || !consumed {
 			s.userLimiter.RecordFailure(userKey)
 			s.ipLimiter.RecordFailure(ip)
 			s.store.WriteAuditLog(r.Context(), &userWithHash.ID, userWithHash.Username, "login_failed", userWithHash.Username, ip, "Ungültiger oder bereits verwendeter 2FA-Code")
@@ -359,7 +409,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(sessionCookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
 		hash := auth.HashSessionToken(cookie.Value)
 		if user, err := s.store.GetSessionUser(r.Context(), hash); err == nil {
-			s.store.WriteAuditLog(r.Context(), &user.ID, user.DisplayName, "logout", user.Username, clientIP(r), "Abgemeldet")
+			s.store.WriteAuditLog(r.Context(), &user.ID, user.DisplayName, "logout", user.Username, s.clientIP(r), "Abgemeldet")
 		}
 		_ = s.store.DeleteSession(r.Context(), hash)
 	}
@@ -383,7 +433,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	pwKey := fmt.Sprintf("pwchg|%s|%d", ip, u.ID)
 	if ok, wait := s.userLimiter.Allow(pwKey); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
@@ -425,7 +475,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "password_changed", u.Username, clientIP(r), "Eigenes Passwort geändert (andere Sitzungen beendet)")
+	s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "password_changed", u.Username, s.clientIP(r), "Eigenes Passwort geändert (andere Sitzungen beendet)")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -468,7 +518,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_created", created.Username, clientIP(r), "Rolle: "+created.Role)
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_created", created.Username, s.clientIP(r), "Rolle: "+created.Role)
 	writeJSON(w, http.StatusCreated, map[string]any{"user": created})
 }
 
@@ -498,7 +548,7 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_updated", updated.Username, clientIP(r),
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_updated", updated.Username, s.clientIP(r),
 		fmt.Sprintf("Rolle=%s, Aktiv=%v", updated.Role, updated.IsActive))
 	writeJSON(w, http.StatusOK, map[string]any{"user": updated})
 }
@@ -533,7 +583,7 @@ func (s *Server) handleAdminResetUserPassword(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_password_reset", target.Username, clientIP(r), "Passwort zurückgesetzt & Sitzungen beendet")
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_password_reset", target.Username, s.clientIP(r), "Passwort zurückgesetzt & Sitzungen beendet")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }
 
@@ -557,7 +607,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_deleted", target.Username, clientIP(r), "Benutzerkonto gelöscht")
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_deleted", target.Username, s.clientIP(r), "Benutzerkonto gelöscht")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -571,16 +621,6 @@ func (s *Server) handleAdminListAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Optionales 2FA (TOTP) ---
-
-func (s *Server) consumeTOTPStep(userID, step int64) bool {
-	s.totpMu.Lock()
-	defer s.totpMu.Unlock()
-	if prev, ok := s.lastTOTPStep[userID]; ok && step <= prev {
-		return false
-	}
-	s.lastTOTPStep[userID] = step
-	return true
-}
 
 func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
@@ -608,9 +648,11 @@ func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uri := auth.BuildTOTPURI(s.cfg.SiteTitle, u.Username, secret)
+	qrDataURI, _ := auth.BuildTOTPQRDataURI(uri)
 	writeJSON(w, http.StatusOK, map[string]string{
-		"secret": secret,
-		"uri":    uri,
+		"secret":      secret,
+		"uri":         uri,
+		"qr_data_uri": qrDataURI,
 	})
 }
 
@@ -620,7 +662,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
 		return
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	limKey := fmt.Sprintf("totpen|%s|%d", ip, u.ID)
 	if ok, wait := s.userLimiter.Allow(limKey); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
@@ -641,7 +683,11 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok, step := auth.VerifyTOTPCodeStep(full.TOTPSecret, body.Code, time.Now().UTC())
-	if !ok || !s.consumeTOTPStep(u.ID, step) {
+	consumed := false
+	if ok {
+		consumed, _ = s.store.ConsumeUserTOTPStep(r.Context(), u.ID, step)
+	}
+	if !ok || !consumed {
 		s.userLimiter.RecordFailure(limKey)
 		s.store.WriteAuditLog(r.Context(), &u.ID, u.DisplayName, "totp_enable_failed", u.Username, ip, "Ungültiger 2FA-Bestätigungscode")
 		writeError(w, http.StatusBadRequest, "Der eingegebene 6-stellige Code ist ungültig")
@@ -662,7 +708,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Nicht angemeldet")
 		return
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	limKey := fmt.Sprintf("totpdis|%s|%d", ip, u.ID)
 	if ok, wait := s.userLimiter.Allow(limKey); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
@@ -721,6 +767,6 @@ func (s *Server) handleAdminResetUserTOTP(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "2FA-Reset fehlgeschlagen")
 		return
 	}
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_totp_reset", target.Username, clientIP(r), "2FA durch Administrator zurückgesetzt")
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "user_totp_reset", target.Username, s.clientIP(r), "2FA durch Administrator zurückgesetzt")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }

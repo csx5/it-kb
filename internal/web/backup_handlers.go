@@ -45,29 +45,45 @@ func (s *Server) handleFullBackupDownload(w http.ResponseWriter, r *http.Request
 
 	passphrase := r.Header.Get("X-Backup-Passphrase")
 	if passphrase != "" {
-		plain, err := os.ReadFile(tmpPath)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Backup-Datei konnte nicht gelesen werden")
+		if len(passphrase) < 8 {
+			writeError(w, http.StatusBadRequest, "backup-passphrase muss mindestens 8 zeichen lang sein")
 			return
 		}
-		enc, err := backup.EncryptBytes(plain, passphrase)
+		srcFile, err := os.Open(tmpPath)
 		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Backup-Datei konnte nicht geöffnet werden")
+			return
+		}
+		defer srcFile.Close()
+
+		tmpEnc, err := os.CreateTemp("", "it-kb-dl-enc-*.itkb.enc")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Temporäre verschlüsselte Backup-Datei fehlgeschlagen")
+			return
+		}
+		tmpEncPath := tmpEnc.Name()
+		defer os.Remove(tmpEncPath)
+		_ = os.Chmod(tmpEncPath, 0o600)
+
+		if err := backup.EncryptStream(srcFile, tmpEnc, passphrase); err != nil {
+			_ = tmpEnc.Close()
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		_ = tmpEnc.Close()
+
 		filename := fmt.Sprintf("it-kb-vollbackup-%s.itkb.enc", time.Now().Format("20060102-150405"))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-		s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_download_encrypted", "full_backup", clientIP(r), filename)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(enc)
+		s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_download_encrypted", "full_backup", s.clientIP(r), filename)
+		http.ServeFile(w, r, tmpEncPath)
 		return
 	}
 
 	filename := fmt.Sprintf("it-kb-vollbackup-%s.zip", time.Now().Format("20060102-150405"))
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_download", "full_backup", clientIP(r), filename)
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_download", "full_backup", s.clientIP(r), filename)
 	http.ServeFile(w, r, tmpPath)
 }
 
@@ -132,40 +148,49 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 	var tmpDec *os.File
 
 	if backup.IsEncryptedBackup(magic[:]) {
-		_ = tmpUpload.Close()
-		encRaw, err := os.ReadFile(tmpUploadPath)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "Backup-Datei konnte nicht gelesen werden")
+		if _, err := tmpUpload.Seek(0, io.SeekStart); err != nil {
+			_ = tmpUpload.Close()
+			writeError(w, http.StatusInternalServerError, "Backup-Datei konnte nicht zurückgesetzt werden")
 			return
 		}
 		passphrase := r.FormValue("passphrase")
 		if passphrase == "" {
 			passphrase = r.Header.Get("X-Backup-Passphrase")
 		}
-		dec, err := backup.DecryptBytes(encRaw, passphrase)
-		if err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, backup.ErrPassphraseNeeded) {
-				status = http.StatusUnprocessableEntity
-			}
-			writeError(w, status, err.Error())
-			return
-		}
 		tmpDec, err = os.CreateTemp("", "it-kb-restore-dec-*.zip")
 		if err != nil {
+			_ = tmpUpload.Close()
 			writeError(w, http.StatusInternalServerError, "Temporäre Datei fehlgeschlagen")
 			return
 		}
 		tmpDecPath = tmpDec.Name()
 		defer os.Remove(tmpDecPath)
 		_ = os.Chmod(tmpDecPath, 0o600)
-		if _, err := tmpDec.Write(dec); err != nil {
+
+		decErr := backup.DecryptStream(tmpUpload, tmpDec, passphrase)
+		_ = tmpUpload.Close()
+		if decErr != nil {
 			_ = tmpDec.Close()
-			writeError(w, http.StatusInternalServerError, "Entschlüsselung fehlgeschlagen")
+			status := http.StatusBadRequest
+			if errors.Is(decErr, backup.ErrPassphraseNeeded) {
+				status = http.StatusUnprocessableEntity
+			}
+			writeError(w, status, decErr.Error())
+			return
+		}
+		stat, err := tmpDec.Stat()
+		if err != nil {
+			_ = tmpDec.Close()
+			writeError(w, http.StatusInternalServerError, "Entschlüsselte Datei konnte nicht geprüft werden")
+			return
+		}
+		if _, err := tmpDec.Seek(0, io.SeekStart); err != nil {
+			_ = tmpDec.Close()
+			writeError(w, http.StatusInternalServerError, "Entschlüsselte Datei konnte nicht gelesen werden")
 			return
 		}
 		readerAt = tmpDec
-		zipSize = int64(len(dec))
+		zipSize = stat.Size()
 		defer tmpDec.Close()
 	} else {
 		defer tmpUpload.Close()
@@ -182,7 +207,7 @@ func (s *Server) handleFullBackupRestore(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_restore", "full_backup", clientIP(r), "Voll-Backup eingespielt")
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "backup_restore", "full_backup", s.clientIP(r), "Voll-Backup eingespielt")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "restored",
 	})

@@ -219,7 +219,7 @@ func (s *Server) handlePermanentDeleteArticle(w http.ResponseWriter, r *http.Req
 	}
 
 	s.engine.RemoveArticle(id)
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "article_permanent_delete", strconv.FormatInt(id, 10), clientIP(r), "Artikel endgültig gelöscht")
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "article_permanent_delete", strconv.FormatInt(id, 10), s.clientIP(r), "Artikel endgültig gelöscht")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

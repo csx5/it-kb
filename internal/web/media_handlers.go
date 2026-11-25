@@ -155,7 +155,7 @@ func (s *Server) handleCleanupOrphanMedia(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "media_orphan_cleanup", "media", clientIP(r),
+	s.store.WriteAuditLog(r.Context(), actorUserID(r), actorName(r, "Admin"), "media_orphan_cleanup", "media", s.clientIP(r),
 		fmt.Sprintf("%d Dateien entfernt (%d Bytes)", deleted, freedBytes))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deleted":     deleted,

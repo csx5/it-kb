@@ -7,17 +7,17 @@ Eigenständige, 100 % lokale Wissensdatenbank für IT-Teams als einzelnes Go-Bin
 - **Einzelnes Binary:** Keine Laufzeit-Abhängigkeiten (kein Docker, Node, Python oder CGO). Läuft auf Linux, Windows und lokal auf `localhost`.
 - **100 % lokal & deterministisch:** Keine externen CDNs, Fonts, Skripte oder Cloud-APIs.
 - **IT-Such-Engine:** Eigene In-Memory-Engine mit BM25-Feldgewichtung (`Fehlercode > Titel > Tags > Symptome > Lösung`), Exakt-Boost für Fehlercodes/Registry-Pfade/Dateinamen, Trigramm-Tippfehler-Toleranz und im UI pflegbaren Team-Synonymen.
-- **Screenshot-Workflow:** Einfügen per `Strg+V` über einen integrierten Canvas-Bildeditor (Rahmen, Pfeil, Schwärzen/Verpixeln) mit clientseitiger Komprimierung.
-- **Struktur & Versionierung:** Vorlagen (*Problem & Lösung*, *How-To*), Versionshistorie mit Diff & Restore, Konflikterkennung, Aktualitätsprüfung und Papierkorb.
-- **Sichere Authentifizierung & Admin-Konsole:** Standardmäßig geschützt per Benutzer-Login (Argon2id-Passwort-Hashing, optionales 2FA per TOTP-Authenticator-App, 256-Bit-`HttpOnly`-Sessions als SHA-256-Hash in SQLite, Brute-Force-Rate-Limiting, CSRF-Schutz, Fail-Closed für API/Medien/Exporte). Drei Rollen (*Administrator*, *Bearbeiter*, *Leser*), geführte Ersteinrichtung im Browser und Sicherheits-Audit-Log.
-- **Datenschutz & HTTPS im LAN:** 1-Flag-HTTPS (`--tls-auto` erzeugt lokal ein selbstsigniertes ECDSA-Zertifikat inkl. LAN-IPs), lokaler Sensible-Daten-Warner im Editor vor dem Speichern und optional AES-256-GCM-verschlüsselte Voll-Backups (`.itkb.enc`).
+- **Browser-Workflow & Querverweise:** Teilbare Hash-Links (`#article/<id>`, `#new`, `#edit/<id>`, `#admin`), automatische lokale Entwurfsspeicherung (`localStorage`) mit Schutz vor versehentlichem Verlust, klickbare `#tag`-Filter mit Live-Vorschlägen sowie Artikel-Querverweise per `[[`.
+- **Screenshot-Workflow:** Globales `Strg+V` im Editor über den integrierten Canvas-Bildeditor (Schwärzen, Verpixeln, Rahmen, Pfeil, Text-Labels, Zuschneiden, Zoom) mit clientseitiger Komprimierung.
+- **Struktur, Vorlagen & Versionierung:** Standard-Vorlagen (*Problem & Lösung*, *How-To*) sowie eigene Team-Vorlagen/Textbausteine, Versionshistorie mit Diff & Restore, Konflikterkennung, Aktualitätsprüfung und Papierkorb.
+- **Sichere Authentifizierung & Admin-Konsole:** Standardmäßig geschützt per Benutzer-Login (Argon2id-Passwort-Hashing, optionales 2FA per TOTP-Authenticator-App inkl. Offline-SVG-QR-Code und persistentem DB-Replay-Schutz, 256-Bit-`HttpOnly`-Sessions als SHA-256-Hash in SQLite, Brute-Force-Rate-Limiting, CSRF-Schutz, Fail-Closed für API/Medien/Exporte). Drei Rollen (*Administrator*, *Bearbeiter*, *Leser*), geführte Ersteinrichtung im Browser und Sicherheits-Audit-Log.
+- **Datenschutz, Proxy & HTTPS im LAN:** 1-Flag-HTTPS (`--tls-auto` erzeugt lokal ein selbstsigniertes ECDSA-Zertifikat inkl. LAN-IPs), vertrauenswürdige Reverse-Proxy-Konfiguration (`trusted_proxies`), lokaler Sensible-Daten-Warner im Editor vor dem Speichern und AES-256-GCM-Chunked-Backup-Verschlüsselung (`ITKBENC2`, abwärtskompatibel zu `ITKBENC1`).
 - **IT-Support-Alltag:** „Hat geholfen“-Zähler, angepinnte Dauerbrenner, Praxis-Kommentare unter Artikeln, algorithmisch ermittelte „Ähnliche Artikel“ und saubere Druck-/PDF-Ansicht (`@media print`).
-- **Kein Vendor-Lock-in:** Portabler Markdown-Export (ZIP) sowie konsistentes SQLite-Voll-Backup inkl. Medien.
+- **Kein Vendor-Lock-in & Auto-Backup:** Portabler Markdown-Export (ZIP) **und** Markdown-/ZIP-Import inkl. Medien, konsistentes SQLite-Voll-Backup (`VACUUM INTO`) sowie eingebaute zeitgesteuerte Backup-Rotation.
 
 ## Schnellstart (Lokal)
 
 ```bash
-go mod tidy
 make build
 ./bin/it-kb serve
 ```
@@ -42,6 +42,11 @@ Reihenfolge der Priorität: `CLI-Flags > Umgebungsvariablen (ITKB_*) > config.js
 | `tls_auto` | `--tls-auto` | `ITKB_TLS_AUTO` | `false` |
 | `tls_cert` | `--tls-cert` | `ITKB_TLS_CERT` | _(leer = HTTP)_ |
 | `tls_key` | `--tls-key` | `ITKB_TLS_KEY` | _(leer = HTTP)_ |
+| `trusted_proxies` | – | `ITKB_TRUSTED_PROXIES` | `[]` (kommagetrennte IPs/CIDRs) |
+| `auto_backup_dir` | – | `ITKB_AUTO_BACKUP_DIR` | _(leer = aus)_ |
+| `auto_backup_interval_hours` | – | `ITKB_AUTO_BACKUP_INTERVAL_HOURS` | `0` (Stunden, z. B. `24`) |
+| `auto_backup_keep` | – | `ITKB_AUTO_BACKUP_KEEP` | `7` |
+| `auto_backup_passphrase` | – | `ITKB_AUTO_BACKUP_PASSPHRASE` | _(leer = ZIP, sonst `.itkb.enc`)_ |
 
 Beispielkonfiguration siehe [config.example.json](config.example.json).
 

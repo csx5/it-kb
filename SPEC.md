@@ -83,6 +83,13 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] Artikel-Querverweise (`[[` oder Toolbar-Button „Artikel verlinken“) & globales `Strg+V` im offenen Editor
   - [x] Bildeditor erweitert um Text-Label-Werkzeug und Zoom-Steuerung
 
+- [x] **Release `v1.1.0` – Sicherheit, Betrieb, Team-Funktionen & CI/Release:**
+  - [x] Offline-SVG-QR-Code für TOTP-2FA (`github.com/skip2/go-qrcode`) + persistenter TOTP-Replay-Schutz in SQLite (`users.last_totp_step`, Migration `004_v110_features.sql`)
+  - [x] Streaming-fähige Chunk-Verschlüsselung (`ITKBENC2`, 64-KiB-AES-256-GCM-Chunks, abwärtskompatibel zu `ITKBENC1`) sowie eingebaute automatische Backup-Rotation (`auto_backup_dir`, `auto_backup_interval_hours`, `auto_backup_keep`, `auto_backup_passphrase`)
+  - [x] Sichere `trusted_proxies`-Konfiguration für `X-Forwarded-For` & `X-Forwarded-Proto`
+  - [x] Markdown- & Export-ZIP-Import (`POST /api/import/markdown`) inkl. automatischem Medien-/Kategorie-/Synonym-Import
+  - [x] Eigene Artikel-Vorlagen / Textbausteine (`article_templates`, `/api/templates`, Verwaltungs-Tab & Editor-Auswahl)
+  - [x] GitHub Actions CI (`ci.yml`) & automatischer Multi-Plattform-Release-Workflow (`release.yml`)
+
 ### Später vorgemerkt (Open-Source / GitHub-Politur)
-- [ ] GitHub Actions CI (`go vet`, `go test`) & automatische Multi-Plattform-Releases bei Git-Tags
 - [ ] Screenshots / Vorschau-Ansichten in `README.md`
