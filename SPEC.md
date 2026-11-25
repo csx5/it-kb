@@ -76,6 +76,13 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] **Lokaler Sensible-Daten-Warner im Editor:** `internal/web/static/js/pii-scanner.js` warnt vor dem Speichern bei E-Mails, Klartext-Passwörtern, Keys, IBANs, Lizenzschlüsseln und internen IPs
   - [x] **Support-Alltag (ohne Such-/Mitarbeiter-Tracking):** „Hat geholfen“-Zähler (inkl. sanftem Such-Boost), Angepinnte Dauerbrenner, Praxis-Kommentare unter Artikeln, algorithmische „Ähnliche Artikel“-Box (`Engine.RelatedArticles`) und Druck-/PDF-Stylesheet (`@media print`)
 
+- [x] **Release `v1.0.1` – Bedienung & Alltag im Browser:**
+  - [x] Hash-Routing (`#article/<id>`, `#new`, `#edit/<id>`, `#admin`) für teilbare Direktlinks („Link kopieren“) & Browser-Zurück-Navigation
+  - [x] Editor-Schutz gegen Datenverlust (Dirty-Check + automatischer lokaler Zwischenspeicher `localStorage` mit Wiederherstellen/Verwerfen)
+  - [x] Klickbare Tag-Filter (`GET /api/tags`) & Live-Tag-Vorschläge im Editor
+  - [x] Artikel-Querverweise (`[[` oder Toolbar-Button „Artikel verlinken“) & globales `Strg+V` im offenen Editor
+  - [x] Bildeditor erweitert um Text-Label-Werkzeug und Zoom-Steuerung
+
 ### Später vorgemerkt (Open-Source / GitHub-Politur)
 - [ ] GitHub Actions CI (`go vet`, `go test`) & automatische Multi-Plattform-Releases bei Git-Tags
 - [ ] Screenshots / Vorschau-Ansichten in `README.md`

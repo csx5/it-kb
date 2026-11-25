@@ -138,3 +138,8 @@ type SearchHit struct {
 	MatchedField string  `json:"matched_field"`
 	NeedsReview  bool    `json:"needs_review"`
 }
+
+type TagCount struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}

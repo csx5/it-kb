@@ -413,6 +413,37 @@ func (e *Engine) RelatedArticles(articleID int64, limit int) []model.Article {
 	return out
 }
 
+// ListTags liefert alle in aktiven Artikeln verwendeten Tags sortiert nach Häufigkeit.
+func (e *Engine) ListTags() []model.TagCount {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, doc := range e.docs {
+		if doc.article.DeletedAt != nil {
+			continue
+		}
+		for _, t := range doc.article.Tags {
+			tag := strings.ToLower(strings.TrimSpace(t))
+			if tag != "" {
+				counts[tag]++
+			}
+		}
+	}
+
+	out := make([]model.TagCount, 0, len(counts))
+	for tag, n := range counts {
+		out = append(out, model.TagCount{Tag: tag, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].Tag < out[j].Tag
+		}
+		return out[i].Count > out[j].Count
+	})
+	return out
+}
+
 func (e *Engine) fuzzyCandidatesLocked(term string) []string {
 	tris := Trigrams(term)
 	if len(tris) == 0 {

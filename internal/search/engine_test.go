@@ -65,4 +65,10 @@ func TestSearchEngine_ErrorCodeSynonymAndFuzzy(t *testing.T) {
 	if len(hits) == 0 || hits[0].Article.ID != 2 {
 		t.Fatalf("erwartete Artikel 2 für Umlaut-Suche haengt, erhalten: %+v", hits)
 	}
+
+	// 5. Tag-Liste
+	tags := eng.ListTags()
+	if len(tags) < 4 {
+		t.Fatalf("erwartete mindestens 4 tags, erhalten: %+v", tags)
+	}
 }

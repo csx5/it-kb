@@ -108,6 +108,7 @@ func (s *Server) registerRoutes() error {
 	s.mux.HandleFunc("GET /media/{id}", s.requireAuth(model.RoleReader, s.handleServeMedia))
 	s.mux.HandleFunc("GET /api/categories", s.requireAuth(model.RoleReader, s.handleListCategories))
 	s.mux.HandleFunc("GET /api/synonyms", s.requireAuth(model.RoleReader, s.handleListSynonyms))
+	s.mux.HandleFunc("GET /api/tags", s.requireAuth(model.RoleReader, s.handleListTags))
 
 	// Bearbeiten (Editor+)
 	s.mux.HandleFunc("POST /api/preview", s.requireAuth(model.RoleEditor, s.handlePreviewMarkdown))
@@ -314,6 +315,12 @@ func (s *Server) handleListSynonyms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, groups)
+}
+
+func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tags": s.engine.ListTags(),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

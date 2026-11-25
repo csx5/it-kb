@@ -5,6 +5,7 @@ import { scanForSensitiveData } from "/js/pii-scanner.js";
 const THEME_KEY = "itkb_theme";
 const AUTHOR_KEY = "itkb_author";
 const HELPFUL_KEY = "itkb_helpful_ids";
+const DRAFT_PREFIX = "itkb_draft_";
 
 const imageEditor = createImageEditorController();
 
@@ -63,12 +64,15 @@ const els = {
   filterTemplate: document.getElementById("filter-template"),
   filterNeedsReview: document.getElementById("filter-needs-review"),
   filterDeleted: document.getElementById("filter-deleted"),
+  activeTagChip: document.getElementById("active-tag-chip"),
   resultMeta: document.getElementById("result-meta"),
   resultsList: document.getElementById("results-list"),
   articleDetail: document.getElementById("article-detail"),
   articleEditor: document.getElementById("article-editor"),
   editorHeading: document.getElementById("editor-heading"),
   editorLockBanner: document.getElementById("editor-lock-banner"),
+  editorDraftBanner: document.getElementById("editor-draft-banner"),
+  btnDiscardDraft: document.getElementById("btn-discard-draft"),
   editorPanes: document.getElementById("editor-panes"),
   btnEditorCancel: document.getElementById("btn-editor-cancel"),
   btnEditorSave: document.getElementById("btn-editor-save"),
@@ -77,6 +81,7 @@ const els = {
   edCategory: document.getElementById("ed-category"),
   edStatus: document.getElementById("ed-status"),
   edTags: document.getElementById("ed-tags"),
+  edTagSuggestions: document.getElementById("ed-tag-suggestions"),
   edErrorCodesWrap: document.getElementById("ed-error-codes-wrap"),
   edErrorCodes: document.getElementById("ed-error-codes"),
   edSymptomsWrap: document.getElementById("ed-symptoms-wrap"),
@@ -86,6 +91,11 @@ const els = {
   edSummaryWrap: document.getElementById("ed-summary-wrap"),
   edSummary: document.getElementById("ed-summary"),
   edPreviewContent: document.getElementById("ed-preview-content"),
+  btnLinkArticle: document.getElementById("btn-link-article"),
+  linkArticleDialog: document.getElementById("link-article-dialog"),
+  linkArticleSearch: document.getElementById("link-article-search"),
+  linkArticleResults: document.getElementById("link-article-results"),
+  btnLinkArticleCancel: document.getElementById("btn-link-article-cancel"),
   conflictDialog: document.getElementById("conflict-dialog"),
   conflictIntro: document.getElementById("conflict-intro"),
   conflictDiff: document.getElementById("conflict-diff"),
@@ -107,6 +117,14 @@ const state = {
   currentArticle: null,
   editingArticleId: null,
   editingVersion: 0,
+  editingBaseArticle: null,
+  editorDirty: false,
+  activeTag: "",
+  knownTags: [],
+  currentHash: window.location.hash || "#",
+  suppressHashOnce: false,
+  linkTargetTextarea: null,
+  linkReplaceTrigger: false,
   lastFocusedTextarea: null,
   lockInterval: null,
   conflictServerArticle: null,
@@ -115,6 +133,8 @@ const state = {
 let searchTimer = null;
 let previewTimer = null;
 let toastTimer = null;
+let draftTimer = null;
+let linkSearchTimer = null;
 
 function canEdit() {
   if (!state.authRequired) return true;
@@ -240,6 +260,59 @@ function showView(viewName) {
 
   if (viewName !== "editor") {
     stopLockHeartbeat();
+    state.editorDirty = false;
+  }
+}
+
+function navigateHash(hash) {
+  const normalized = hash.startsWith("#") ? hash : `#${hash}`;
+  state.currentHash = normalized;
+  if (window.location.hash !== normalized) {
+    state.suppressHashOnce = true;
+    window.location.hash = normalized;
+  }
+}
+
+async function applyHashRoute() {
+  const hash = (window.location.hash || "#").replace(/^#\/?/, "");
+  state.currentHash = window.location.hash || "#";
+
+  if (hash.startsWith("article/")) {
+    const id = Number(hash.slice("article/".length));
+    if (Number.isInteger(id) && id > 0) {
+      await openArticle(id, true);
+      return;
+    }
+  }
+  if (hash === "new" && canEdit()) {
+    openEditor(null, true);
+    return;
+  }
+  if (hash.startsWith("edit/") && canEdit()) {
+    const id = Number(hash.slice("edit/".length));
+    if (Number.isInteger(id) && id > 0) {
+      const { ok, body } = await apiRequest(`/api/articles/${id}`);
+      if (ok && body?.article) {
+        openEditor(body.article, true);
+        return;
+      }
+    }
+  }
+  if (hash === "admin" && canEdit()) {
+    showView("admin");
+    await adminUI.refreshAdminView();
+    return;
+  }
+
+  showView("list");
+  await runSearch();
+}
+
+async function loadKnownTags() {
+  const { ok, body } = await apiRequest("/api/tags");
+  if (ok && Array.isArray(body?.tags)) {
+    state.knownTags = body.tags;
+    renderTagSuggestions();
   }
 }
 
@@ -264,6 +337,28 @@ async function loadMeta() {
     o2.textContent = cat.name;
     els.edCategory.appendChild(o2);
   }
+  await loadKnownTags();
+}
+
+function renderActiveTagChip() {
+  if (!state.activeTag) {
+    els.activeTagChip.classList.add("hidden");
+    els.activeTagChip.innerHTML = "";
+    return;
+  }
+  els.activeTagChip.classList.remove("hidden");
+  els.activeTagChip.innerHTML = `<span>#${escapeText(state.activeTag)}</span><button type="button" class="tag-chip-clear" title="Tag-Filter entfernen">×</button>`;
+  els.activeTagChip.querySelector("button").addEventListener("click", () => {
+    setTagFilter("");
+  });
+}
+
+function setTagFilter(tag) {
+  state.activeTag = (tag || "").trim().toLowerCase();
+  renderActiveTagChip();
+  navigateHash("#");
+  showView("list");
+  runSearch();
 }
 
 async function runSearch() {
@@ -274,7 +369,9 @@ async function runSearch() {
   if (els.filterTemplate.value) params.set("template", els.filterTemplate.value);
   if (els.filterNeedsReview.checked) params.set("needs_review", "true");
   if (els.filterDeleted.checked) params.set("deleted", "true");
+  if (state.activeTag) params.set("tag", state.activeTag);
 
+  renderActiveTagChip();
   const { ok, body } = await apiRequest(`/api/search?${params.toString()}`);
   if (!ok || !body) {
     showToast("Suche fehlgeschlagen");
@@ -292,7 +389,7 @@ function renderResults(hits) {
     empty.className = "hit-snippet";
     if (els.filterDeleted.checked) {
       empty.textContent = "Der Papierkorb ist leer.";
-    } else if (!els.searchInput.value.trim() && !els.filterCategory.value && !els.filterStatus.value && !els.filterTemplate.value && !els.filterNeedsReview.checked) {
+    } else if (!els.searchInput.value.trim() && !els.filterCategory.value && !els.filterStatus.value && !els.filterTemplate.value && !els.filterNeedsReview.checked && !state.activeTag) {
       empty.textContent = "Noch keine Einträge vorhanden.";
     } else {
       empty.textContent = "Keine passenden Einträge gefunden.";
@@ -344,7 +441,13 @@ function renderResults(hits) {
       badges.appendChild(makeBadge("Prüfung fällig", "badge-warn"));
     }
     for (const tag of a.tags || []) {
-      badges.appendChild(makeBadge(`#${tag}`, ""));
+      const tBadge = makeBadge(`#${tag}`, "badge-clickable");
+      tBadge.title = `Nach #${tag} filtern`;
+      tBadge.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setTagFilter(tag);
+      });
+      badges.appendChild(tBadge);
     }
     card.appendChild(badges);
 
@@ -364,7 +467,7 @@ function makeBadge(text, extraClass) {
   return el;
 }
 
-async function openArticle(id) {
+async function openArticle(id, fromHash = false) {
   const { ok, body } = await apiRequest(`/api/articles/${id}`);
   if (!ok || !body) {
     showToast("Artikel konnte nicht geladen werden");
@@ -372,6 +475,9 @@ async function openArticle(id) {
   }
   const a = body.article;
   state.currentArticle = a;
+  if (!fromHash) {
+    navigateHash(`#article/${a.id}`);
+  }
   showView("detail");
 
   els.articleDetail.innerHTML = "";
@@ -384,6 +490,7 @@ async function openArticle(id) {
   backBtn.className = "btn";
   backBtn.textContent = "Zurück zur Übersicht";
   backBtn.addEventListener("click", () => {
+    navigateHash("#");
     showView("list");
     runSearch();
   });
@@ -392,6 +499,21 @@ async function openArticle(id) {
   actions.className = "detail-actions";
 
   if (!a.deleted_at) {
+    const copyLinkBtn = document.createElement("button");
+    copyLinkBtn.type = "button";
+    copyLinkBtn.className = "btn";
+    copyLinkBtn.textContent = "Link kopieren";
+    copyLinkBtn.addEventListener("click", async () => {
+      const shareURL = `${window.location.origin}${window.location.pathname}#article/${a.id}`;
+      try {
+        await copyTextToClipboard(shareURL);
+        showToast("Direktlink kopiert");
+      } catch {
+        showToast("Kopieren fehlgeschlagen");
+      }
+    });
+    actions.appendChild(copyLinkBtn);
+
     const helpfulBtn = document.createElement("button");
     helpfulBtn.type = "button";
     helpfulBtn.className = "btn";
@@ -500,7 +622,10 @@ async function openArticle(id) {
     metaLine.appendChild(makeBadge(`Geprüft am ${d} (${a.last_verified_by || "–"})`, "badge-ok"));
   }
   for (const tag of a.tags || []) {
-    metaLine.appendChild(makeBadge(`#${tag}`, ""));
+    const tBadge = makeBadge(`#${tag}`, "badge-clickable");
+    tBadge.title = `Nach #${tag} filtern`;
+    tBadge.addEventListener("click", () => setTagFilter(tag));
+    metaLine.appendChild(tBadge);
   }
   els.articleDetail.appendChild(metaLine);
 
@@ -724,6 +849,7 @@ function insertAtCursor(textarea, snippet) {
   const suffix = "\n";
   ta.setRangeText(prefix + snippet + suffix, start, end, "end");
   ta.focus();
+  markEditorDirty();
   schedulePreview();
 }
 
@@ -830,6 +956,8 @@ async function softDeleteArticle(id) {
     return;
   }
   showToast("Artikel in den Papierkorb verschoben");
+  await loadKnownTags();
+  navigateHash("#");
   showView("list");
   await runSearch();
 }
@@ -841,6 +969,7 @@ async function restoreArticle(id) {
     return;
   }
   showToast("Artikel wiederhergestellt");
+  await loadKnownTags();
   await openArticle(id);
 }
 
@@ -861,34 +990,132 @@ async function permanentDeleteArticle(id) {
     return;
   }
   showToast("Artikel endgültig gelöscht");
+  await loadKnownTags();
+  navigateHash("#");
   showView("list");
   await runSearch();
 }
 
-// --- Editor & Konflikterkennung ---
+// --- Editor, Auto-Draft, Tag-Vorschläge, Querverweise & Konflikterkennung ---
 
-function openEditor(article = null) {
+function draftStorageKey(articleId) {
+  return articleId ? `${DRAFT_PREFIX}${articleId}` : `${DRAFT_PREFIX}new`;
+}
+
+function saveDraftToLocal() {
+  try {
+    const key = draftStorageKey(state.editingArticleId);
+    const data = {
+      title: els.edTitle.value,
+      template_type: els.edTemplate.value,
+      category_id: els.edCategory.value,
+      status: els.edStatus.value,
+      tags: els.edTags.value,
+      error_codes: els.edErrorCodes.value,
+      symptoms: els.edSymptoms.value,
+      solution_body: els.edSolution.value,
+      summary: els.edSummary.value,
+      saved_at: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {}
+}
+
+function clearDraft(articleId) {
+  try {
+    localStorage.removeItem(draftStorageKey(articleId));
+  } catch {}
+  els.editorDraftBanner.classList.add("hidden");
+}
+
+function markEditorDirty() {
+  state.editorDirty = true;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraftToLocal, 400);
+}
+
+function fillEditorFormFields(data) {
+  els.edTitle.value = data.title || "";
+  els.edTemplate.value = data.template_type || "problem_solution";
+  els.edCategory.value = data.category_id ? String(data.category_id) : "";
+  els.edStatus.value = data.status || "active";
+  els.edTags.value = Array.isArray(data.tags) ? data.tags.join(", ") : (data.tags || "");
+  els.edErrorCodes.value = data.error_codes || "";
+  els.edSymptoms.value = data.symptoms || "";
+  els.edSolution.value = data.solution_body || "";
+  els.edSummary.value = data.summary || "";
+}
+
+function renderTagSuggestions() {
+  if (!els.edTagSuggestions) return;
+  const raw = els.edTags.value || "";
+  const parts = raw.split(",");
+  const currentPart = (parts[parts.length - 1] || "").trim().toLowerCase();
+  const already = new Set(parts.slice(0, -1).map((t) => t.trim().toLowerCase()).filter(Boolean));
+
+  const matches = (state.knownTags || [])
+    .filter((t) => !already.has(t.tag) && (!currentPart || t.tag.includes(currentPart)))
+    .slice(0, 8);
+
+  els.edTagSuggestions.innerHTML = "";
+  if (matches.length === 0) {
+    els.edTagSuggestions.classList.add("hidden");
+    return;
+  }
+  els.edTagSuggestions.classList.remove("hidden");
+  for (const item of matches) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "badge badge-clickable";
+    chip.textContent = `#${item.tag} (${item.count})`;
+    chip.addEventListener("click", () => {
+      const kept = parts.slice(0, -1).map((t) => t.trim()).filter(Boolean);
+      kept.push(item.tag);
+      els.edTags.value = kept.join(", ") + ", ";
+      els.edTags.focus();
+      markEditorDirty();
+      renderTagSuggestions();
+    });
+    els.edTagSuggestions.appendChild(chip);
+  }
+}
+
+function openEditor(article = null, fromHash = false) {
   state.editingArticleId = article ? article.id : null;
   state.editingVersion = article ? article.version : 0;
+  state.editingBaseArticle = article || null;
   state.conflictServerArticle = null;
+  state.editorDirty = false;
+
+  if (!fromHash) {
+    navigateHash(article ? `#edit/${article.id}` : "#new");
+  }
 
   els.editorHeading.textContent = article
     ? `Artikel bearbeiten (Version ${article.version})`
     : "Neuer Artikel";
   els.editorLockBanner.classList.add("hidden");
+  els.editorDraftBanner.classList.add("hidden");
 
-  els.edTitle.value = article ? article.title : "";
-  els.edTemplate.value = article ? article.template_type : "problem_solution";
-  els.edCategory.value = article && article.category_id ? String(article.category_id) : "";
-  els.edStatus.value = article ? article.status : "active";
-  els.edTags.value = article ? (article.tags || []).join(", ") : "";
-  els.edErrorCodes.value = article ? article.error_codes || "" : "";
-  els.edSymptoms.value = article ? article.symptoms || "" : "";
-  els.edSolution.value = article ? article.solution_body || "" : "";
-  els.edSummary.value = "";
+  fillEditorFormFields(article || {});
   els.edSummaryWrap.classList.toggle("hidden", !article);
 
+  // Prüfen, ob ein ungespeicherter lokaler Auto-Draft existiert
+  try {
+    const rawDraft = localStorage.getItem(draftStorageKey(state.editingArticleId));
+    if (rawDraft) {
+      const draft = JSON.parse(rawDraft);
+      const hasContent = Boolean((draft.title || "").trim() || (draft.symptoms || "").trim() || (draft.solution_body || "").trim());
+      if (hasContent) {
+        fillEditorFormFields(draft);
+        state.editorDirty = true;
+        els.editorDraftBanner.classList.remove("hidden");
+      }
+    }
+  } catch {}
+
   syncTemplateFields();
+  renderTagSuggestions();
   state.lastFocusedTextarea = els.edSolution;
   showView("editor");
   els.edTitle.focus();
@@ -896,6 +1123,55 @@ function openEditor(article = null) {
 
   if (article) {
     startLockHeartbeat(article.id);
+  }
+}
+
+async function openLinkArticlePicker(targetTextarea, replaceTrigger = false) {
+  state.linkTargetTextarea = targetTextarea || state.lastFocusedTextarea || els.edSolution;
+  state.linkReplaceTrigger = replaceTrigger;
+  els.linkArticleSearch.value = "";
+  els.linkArticleDialog.showModal();
+  els.linkArticleSearch.focus();
+  await searchLinkArticles("");
+}
+
+async function searchLinkArticles(q) {
+  const params = new URLSearchParams({ limit: "12" });
+  if (q.trim()) params.set("q", q.trim());
+  const { ok, body } = await apiRequest(`/api/search?${params.toString()}`);
+  els.linkArticleResults.innerHTML = "";
+  if (!ok || !body?.hits?.length) {
+    const p = document.createElement("p");
+    p.className = "hit-snippet";
+    p.textContent = "Keine passenden Artikel gefunden.";
+    els.linkArticleResults.appendChild(p);
+    return;
+  }
+  for (const hit of body.hits) {
+    const a = hit.article;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "link-picker-item";
+    btn.innerHTML = `
+      <div>${escapeText(a.title)}</div>
+      <div class="link-picker-meta">${escapeText(a.category_name || "Ohne Kategorie")}${a.error_codes ? ` · ${escapeText(a.error_codes)}` : ""}</div>
+    `;
+    btn.addEventListener("click", () => {
+      const ta = state.linkTargetTextarea || els.edSolution;
+      const end = ta.selectionEnd ?? ta.value.length;
+      let start = ta.selectionStart ?? end;
+      if (state.linkReplaceTrigger && start >= 2 && ta.value.slice(start - 2, start) === "[[") {
+        start -= 2;
+      }
+      const safeTitle = String(a.title).replace(/[\[\]]/g, "");
+      const linkMd = `[${safeTitle}](#article/${a.id})`;
+      ta.setRangeText(linkMd, start, end, "end");
+      els.linkArticleDialog.close();
+      ta.focus();
+      markEditorDirty();
+      schedulePreview();
+    });
+    els.linkArticleResults.appendChild(btn);
   }
 }
 
@@ -972,8 +1248,12 @@ async function saveEditor(force = false, skipPIICheck = false) {
     return;
   }
 
+  const savedId = state.editingArticleId;
+  clearDraft(savedId);
+  state.editorDirty = false;
   showToast(isUpdate ? `Gespeichert (Version ${body.article.version})` : "Artikel erstellt");
   stopLockHeartbeat();
+  await loadKnownTags();
   await openArticle(body.article.id);
 }
 
@@ -1097,6 +1377,7 @@ function applyMarkdownAction(action) {
 
   ta.setRangeText(insert, start, end, "end");
   ta.focus();
+  markEditorDirty();
   schedulePreview();
 }
 
@@ -1157,39 +1438,88 @@ function escapeText(s) {
 function bindEvents() {
   els.siteTitle.addEventListener("click", (e) => {
     e.preventDefault();
+    if (!els.articleEditor.classList.contains("hidden") && state.editorDirty) {
+      if (!confirm("Ungespeicherte Änderungen verwerfen?")) return;
+      clearDraft(state.editingArticleId);
+      state.editorDirty = false;
+    }
+    navigateHash("#");
     showView("list");
     runSearch();
   });
 
   els.btnNewArticle.addEventListener("click", () => openEditor(null));
   els.btnAdminView.addEventListener("click", async () => {
+    navigateHash("#admin");
     showView("admin");
     await adminUI.refreshAdminView();
   });
   els.btnAdminClose.addEventListener("click", () => {
+    navigateHash("#");
     showView("list");
     runSearch();
   });
   els.btnEditorCancel.addEventListener("click", async () => {
+    if (state.editorDirty && !confirm("Ungespeicherte Änderungen verwerfen?")) {
+      return;
+    }
     const backId = state.editingArticleId;
+    clearDraft(backId);
+    state.editorDirty = false;
     await stopLockHeartbeat();
     if (backId) {
       openArticle(backId);
     } else {
+      navigateHash("#");
       showView("list");
       runSearch();
     }
   });
+  els.btnDiscardDraft.addEventListener("click", () => {
+    clearDraft(state.editingArticleId);
+    fillEditorFormFields(state.editingBaseArticle || {});
+    state.editorDirty = false;
+    syncTemplateFields();
+    renderTagSuggestions();
+    refreshPreview();
+    showToast("Lokaler Entwurf verworfen");
+  });
   els.btnEditorSave.addEventListener("click", () => saveEditor(false));
 
+  els.edTitle.addEventListener("input", markEditorDirty);
+  els.edCategory.addEventListener("change", markEditorDirty);
+  els.edStatus.addEventListener("change", markEditorDirty);
+  els.edErrorCodes.addEventListener("input", markEditorDirty);
+  els.edSummary.addEventListener("input", markEditorDirty);
+  els.edTags.addEventListener("input", () => {
+    markEditorDirty();
+    renderTagSuggestions();
+  });
   els.edTemplate.addEventListener("change", () => {
+    markEditorDirty();
     syncTemplateFields();
     schedulePreview();
   });
-  els.edSymptoms.addEventListener("input", schedulePreview);
-  els.edSolution.addEventListener("input", schedulePreview);
-  els.edSymptoms.addEventListener("focus", () => (state.lastFocusedTextarea = els.edSymptoms));
-  els.edSolution.addEventListener("focus", () => (state.lastFocusedTextarea = els.edSolution));
+  for (const ta of [els.edSymptoms, els.edSolution]) {
+    ta.addEventListener("input", () => {
+      markEditorDirty();
+      schedulePreview();
+      const pos = ta.selectionStart ?? 0;
+      if (pos >= 2 && ta.value.slice(pos - 2, pos) === "[[") {
+        openLinkArticlePicker(ta, true);
+      }
+    });
+    ta.addEventListener("focus", () => (state.lastFocusedTextarea = ta));
+  }
+
+  els.btnLinkArticle.addEventListener("click", () => {
+    openLinkArticlePicker(state.lastFocusedTextarea || els.edSolution, false);
+  });
+  els.btnLinkArticleCancel.addEventListener("click", () => els.linkArticleDialog.close());
+  els.linkArticleSearch.addEventListener("input", () => {
+    clearTimeout(linkSearchTimer);
+    linkSearchTimer = setTimeout(() => searchLinkArticles(els.linkArticleSearch.value), 120);
+  });
 
   for (const btn of document.querySelectorAll(".seg-btn[data-view]")) {
     btn.addEventListener("click", () => {
@@ -1267,7 +1597,51 @@ function bindEvents() {
     }
   });
 
-  window.addEventListener("beforeunload", () => stopLockHeartbeat());
+  window.addEventListener("hashchange", async () => {
+    if (state.suppressHashOnce) {
+      state.suppressHashOnce = false;
+      return;
+    }
+    if (state.authRequired && !state.user) return;
+    if (!els.articleEditor.classList.contains("hidden") && state.editorDirty) {
+      if (!confirm("Ungespeicherte Änderungen verwerfen?")) {
+        navigateHash(state.currentHash || "#");
+        return;
+      }
+      clearDraft(state.editingArticleId);
+      state.editorDirty = false;
+    }
+    await applyHashRoute();
+  });
+
+  // Globales Strg+V für Screenshots im offenen Editor (falls Fokus z. B. im Titel-Feld liegt)
+  document.addEventListener("paste", async (e) => {
+    if (els.articleEditor.classList.contains("hidden")) return;
+    if (document.querySelector("dialog[open]")) return;
+    if (e.target === els.edSymptoms || e.target === els.edSolution) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (blob) {
+          const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+          await handleImageWithEditor(blob, `screenshot-${stamp}`, state.lastFocusedTextarea || els.edSolution);
+        }
+        return;
+      }
+    }
+  });
+
+  window.addEventListener("beforeunload", (e) => {
+    stopLockHeartbeat();
+    if (!els.articleEditor.classList.contains("hidden") && state.editorDirty) {
+      saveDraftToLocal();
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
 }
 
 const adminUI = createAdminAndHistoryController({
@@ -1362,7 +1736,7 @@ function bindAuthEvents() {
     els.loginTotpWrap.classList.add("hidden");
     showAppShell();
     await loadMeta();
-    await runSearch();
+    await applyHashRoute();
   });
 
   els.authSetupForm.addEventListener("submit", async (e) => {
@@ -1392,13 +1766,15 @@ function bindAuthEvents() {
     showAppShell();
     showToast("Administrator erfolgreich angelegt");
     await loadMeta();
-    await runSearch();
+    await applyHashRoute();
   });
 
   els.btnLogout.addEventListener("click", async () => {
     await stopLockHeartbeat();
     await apiRequest("/api/auth/logout", { method: "POST" });
     state.user = null;
+    state.activeTag = "";
+    renderActiveTagChip();
     els.resultsList.innerHTML = "";
     els.articleDetail.innerHTML = "";
     els.searchInput.value = "";
@@ -1522,7 +1898,7 @@ async function boot() {
 
   showAppShell();
   await loadMeta();
-  await runSearch();
+  await applyHashRoute();
 }
 
 boot().catch((err) => {

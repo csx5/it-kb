@@ -114,6 +114,7 @@
             <input type="checkbox" id="filter-deleted">
             <span>Papierkorb</span>
           </label>
+          <span id="active-tag-chip" class="badge badge-pin active-tag-chip hidden"></span>
           <span id="result-meta" class="result-meta"></span>
         </div>
       </section>
@@ -138,6 +139,10 @@
           </div>
 
           <div id="editor-lock-banner" class="banner banner-warn hidden"></div>
+          <div id="editor-draft-banner" class="banner banner-warn draft-banner hidden">
+            <span>Lokaler Entwurf wiederhergestellt.</span>
+            <button type="button" id="btn-discard-draft" class="btn btn-sm">Entwurf verwerfen</button>
+          </div>
 
           <form id="editor-form" class="editor-form">
             <div class="form-grid">
@@ -172,7 +177,8 @@
 
               <label class="field">
                 <span>Tags</span>
-                <input type="text" id="ed-tags" placeholder="Kommagetrennt">
+                <input type="text" id="ed-tags" placeholder="Kommagetrennt" autocomplete="off">
+                <div id="ed-tag-suggestions" class="tag-suggestions hidden"></div>
               </label>
 
               <label class="field field-wide" id="ed-error-codes-wrap">
@@ -188,9 +194,10 @@
               <button type="button" class="tool-btn" data-md="codeblock">Code-Block</button>
               <button type="button" class="tool-btn" data-md="list">Liste</button>
               <button type="button" class="tool-btn" data-md="checklist">Checkliste</button>
+              <button type="button" class="tool-btn" id="btn-link-article">Artikel verlinken</button>
               <button type="button" class="tool-btn" id="btn-upload-media">Datei / Bild</button>
               <input type="file" id="media-file-input" class="hidden" multiple>
-              <span class="toolbar-hint">Strg+V: Screenshot · Strg+S: Speichern</span>
+              <span class="toolbar-hint">Strg+V: Screenshot · [[: Artikel verlinken · Strg+S: Speichern</span>
             </div>
 
             <div id="editor-panes" class="editor-panes view-split">
@@ -397,6 +404,7 @@
             <button type="button" class="tool-btn" data-img-tool="pixelate">Verpixeln</button>
             <button type="button" class="tool-btn" data-img-tool="rect">Rahmen</button>
             <button type="button" class="tool-btn" data-img-tool="arrow">Pfeil</button>
+            <button type="button" class="tool-btn" data-img-tool="text">Text</button>
             <button type="button" class="tool-btn" data-img-tool="crop">Zuschneiden</button>
           </div>
 
@@ -404,6 +412,13 @@
             <button type="button" class="color-dot active" data-img-color="#ef4444" style="background:#ef4444" aria-label="Rot"></button>
             <button type="button" class="color-dot" data-img-color="#facc15" style="background:#facc15" aria-label="Gelb"></button>
             <button type="button" class="color-dot" data-img-color="#3b82f6" style="background:#3b82f6" aria-label="Blau"></button>
+          </div>
+
+          <div class="img-ed-group" title="Zoom">
+            <button type="button" class="tool-btn" id="img-ed-zoom-out">-</button>
+            <span id="img-ed-zoom-label" class="img-ed-zoom-label">Anpassen</span>
+            <button type="button" class="tool-btn" id="img-ed-zoom-in">+</button>
+            <button type="button" class="tool-btn" id="img-ed-zoom-fit">Anpassen</button>
           </div>
 
           <div class="img-ed-group">
@@ -483,6 +498,17 @@
           <button type="button" id="btn-pii-cancel" class="btn btn-primary">Zurück zum Editor</button>
           <button type="button" id="btn-pii-proceed" class="btn btn-danger">Trotzdem speichern</button>
         </div>
+      </div>
+    </dialog>
+
+    <dialog id="link-article-dialog" class="modal-dialog modal-narrow">
+      <div class="modal-box">
+        <div class="img-ed-header">
+          <h3>Artikel verlinken</h3>
+          <button type="button" id="btn-link-article-cancel" class="btn btn-sm">Abbrechen</button>
+        </div>
+        <input type="search" id="link-article-search" class="search-input" placeholder="Artikel suchen …" autocomplete="off">
+        <div id="link-article-results" class="link-picker-list"></div>
       </div>
     </dialog>
 

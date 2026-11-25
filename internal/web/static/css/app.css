@@ -634,6 +634,87 @@ mark {
   border-color: transparent;
 }
 
+.badge-clickable {
+  cursor: pointer;
+}
+
+.badge-clickable:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.active-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tag-chip-clear {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 0.15rem;
+  line-height: 1;
+}
+
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.link-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 45vh;
+  overflow-y: auto;
+  margin-top: 0.75rem;
+}
+
+.link-picker-item {
+  text-align: left;
+  width: 100%;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.75rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.link-picker-item:hover {
+  border-color: var(--accent);
+}
+
+.link-picker-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.img-ed-zoom-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  min-width: 4rem;
+  text-align: center;
+}
+
+#img-ed-canvas.zoomed {
+  max-width: none;
+}
+
 /* Druck- / PDF-Ansicht */
 @media print {
   body {

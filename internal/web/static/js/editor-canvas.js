@@ -43,9 +43,16 @@ export function createImageEditorController() {
   const metaInfo = document.getElementById("img-ed-info");
   const toolBtns = [...document.querySelectorAll("[data-img-tool]")];
   const colorBtns = [...document.querySelectorAll("[data-img-color]")];
+  const btnZoomOut = document.getElementById("img-ed-zoom-out");
+  const btnZoomIn = document.getElementById("img-ed-zoom-in");
+  const btnZoomFit = document.getElementById("img-ed-zoom-fit");
+  const zoomLabel = document.getElementById("img-ed-zoom-label");
+
+  const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
 
   let tool = "redact";
   let color = "#ef4444";
+  let zoomMode = "fit";
   let drawing = false;
   let startX = 0;
   let startY = 0;
@@ -54,6 +61,26 @@ export function createImageEditorController() {
   let history = [];
   let historyIdx = -1;
   let activeResolve = null;
+
+  function applyZoom(mode) {
+    zoomMode = mode;
+    if (mode === "fit" || canvas.width <= 0) {
+      canvas.style.width = "";
+      canvas.classList.remove("zoomed");
+      if (zoomLabel) zoomLabel.textContent = "Anpassen";
+      return;
+    }
+    canvas.classList.add("zoomed");
+    canvas.style.width = `${Math.round(canvas.width * mode)}px`;
+    if (zoomLabel) zoomLabel.textContent = `${Math.round(mode * 100)} %`;
+  }
+
+  function stepZoom(delta) {
+    let idx = zoomMode === "fit" ? ZOOM_STEPS.indexOf(1.0) : ZOOM_STEPS.indexOf(zoomMode);
+    if (idx < 0) idx = 2;
+    const nextIdx = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx + delta));
+    applyZoom(ZOOM_STEPS[nextIdx]);
+  }
 
   function setTool(next) {
     tool = next;
@@ -78,6 +105,7 @@ export function createImageEditorController() {
     canvas.height = snap.height;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(snap, 0, 0);
+    applyZoom(zoomMode);
     updateInfo();
   }
 
@@ -236,10 +264,32 @@ export function createImageEditorController() {
     c.putImageData(imgData, bx, by);
   }
 
+  function drawTextLabel(c, x, y, text, fillColor) {
+    const fontSize = Math.max(16, Math.round(Math.max(canvas.width, canvas.height) / 42));
+    c.save();
+    c.font = `700 ${fontSize}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    c.textBaseline = "top";
+    c.lineJoin = "round";
+    c.lineWidth = Math.max(3, Math.round(fontSize / 5));
+    c.strokeStyle = "#000000";
+    c.fillStyle = fillColor;
+    c.strokeText(text, x, y);
+    c.fillText(text, x, y);
+    c.restore();
+  }
+
   canvas.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
-    canvas.setPointerCapture(e.pointerId);
     const pos = pointerPos(e);
+    if (tool === "text") {
+      const label = prompt("Text für Screenshot:");
+      if (label && label.trim()) {
+        drawTextLabel(ctx, pos.x, pos.y, label.trim(), color);
+        pushHistory();
+      }
+      return;
+    }
+    canvas.setPointerCapture(e.pointerId);
     startX = pos.x;
     startY = pos.y;
     baseSnapshot = snapshotCanvas();
@@ -267,6 +317,9 @@ export function createImageEditorController() {
 
   toolBtns.forEach((b) => b.addEventListener("click", () => setTool(b.dataset.imgTool)));
   colorBtns.forEach((b) => b.addEventListener("click", () => setColor(b.dataset.imgColor)));
+  if (btnZoomOut) btnZoomOut.addEventListener("click", () => stepZoom(-1));
+  if (btnZoomIn) btnZoomIn.addEventListener("click", () => stepZoom(1));
+  if (btnZoomFit) btnZoomFit.addEventListener("click", () => applyZoom("fit"));
 
   btnUndo.addEventListener("click", () => {
     if (historyIdx > 0) {
@@ -363,6 +416,7 @@ export function createImageEditorController() {
       historyIdx = 0;
       setTool("redact");
       setColor("#ef4444");
+      applyZoom("fit");
       inputAlt.value = suggestedName.replace(/\.[^.]+$/, "");
       updateInfo();
       updateButtons();

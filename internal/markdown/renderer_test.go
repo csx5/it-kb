@@ -23,4 +23,9 @@ func TestRenderer_AllowsLocalVideoAndBlocksXSS(t *testing.T) {
 	if strings.Contains(out, "evil.example") {
 		t.Fatalf("externes video-src hätte geblockt werden müssen: %s", out)
 	}
+
+	linkHTML, err := r.RenderHTML("Siehe [Spooler-Reset](#article/42)")
+	if err != nil || !strings.Contains(linkHTML, `href="#article/42"`) {
+		t.Fatalf("interner artikel-querverweis ging verloren: err=%v out=%s", err, linkHTML)
+	}
 }
