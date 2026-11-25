@@ -1,4 +1,5 @@
-﻿[CmdletBinding()]
+﻿& {
+[CmdletBinding()]
 param(
     [switch]$FromSource,
     [string]$Version = "latest",
@@ -13,6 +14,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 $Repo = "csx5/lowi"
 $MinGoMinor = 24
 
@@ -94,7 +96,7 @@ $InLocalRepo = ($null -ne $LocalRepoDir)
 if ($Uninstall) {
     if (-not (Confirm-Action "it-kb unter '$InstallDir' entfernen? (Daten unter '$DataDir' bleiben erhalten)")) {
         Write-Info "Deinstallation abgebrochen."
-        exit 0
+        return
     }
     $svc = Get-Service -Name "it-kb" -ErrorAction SilentlyContinue
     if ($svc) {
@@ -114,7 +116,7 @@ if ($Uninstall) {
         Write-Ok "Binary entfernt: $ExePath"
     }
     Write-Info "Datenverzeichnis ($DataDir) und Konfiguration ($ConfigPath) blieben unverändert."
-    exit 0
+    return
 }
 
 $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { throw "Nur 64-Bit-Windows wird unterstützt." }
@@ -125,7 +127,7 @@ if ($CheckOnly) {
     if (Test-GoOk $goInfo) { Write-Ok "Go: $($goInfo.Text)" } else { Write-Warn "Go >= 1.$MinGoMinor nicht installiert (für -FromSource benötigt)." }
     if (Get-Command git -ErrorAction SilentlyContinue) { Write-Ok "git gefunden" } else { Write-Warn "git nicht installiert (nur für Remote--FromSource benötigt)." }
     if (Get-Command winget -ErrorAction SilentlyContinue) { Write-Ok "Paketmanager: winget" } elseif (Get-Command choco -ErrorAction SilentlyContinue) { Write-Ok "Paketmanager: choco" } else { Write-Warn "Kein Paketmanager (winget/choco) gefunden" }
-    exit 0
+    return
 }
 
 if ($Service -and -not (Test-IsAdmin)) {
@@ -177,7 +179,7 @@ try {
         }
 
         $BuildVer = if ($Version -eq "latest") { "dev" } else { $Version }
-        if (Test-Path (Join-Path $SrcDir ".git") -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        if ((Test-Path (Join-Path $SrcDir ".git")) -and (Get-Command git -ErrorAction SilentlyContinue)) {
             $gitVer = (& git -C $SrcDir describe --tags --always 2>$null)
             if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitVer)) { $BuildVer = $gitVer.Trim() }
         }
@@ -210,7 +212,7 @@ try {
             $token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $env:GH_TOKEN }
             $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
             if ($ghCmd) {
-                Write-Info "Öffentlicher Download nicht verfügbar – verwende GitHub CLI (gh) ..."
+                Write-Info "Öffentlicher Download nicht verfügbar - verwende GitHub CLI (gh) ..."
                 if ($Version -eq "latest") {
                     & $ghCmd.Source release download --repo $Repo --pattern $AssetName --pattern "SHA256SUMS.txt" --dir $TempDir --clobber
                 } else {
@@ -219,7 +221,7 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw "Release-Download via gh fehlgeschlagen." }
                 Move-Item -Path (Join-Path $TempDir $AssetName) -Destination $BuiltExe -Force
             } elseif ($token) {
-                Write-Info "Öffentlicher Download nicht verfügbar – verwende GITHUB_TOKEN ..."
+                Write-Info "Öffentlicher Download nicht verfügbar - verwende GITHUB_TOKEN ..."
                 $apiUrl = if ($Version -eq "latest") { "https://api.github.com/repos/$Repo/releases/latest" } else { "https://api.github.com/repos/$Repo/releases/tags/$Version" }
                 $hdrJson = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json" }
                 $rel = Invoke-RestMethod -Uri $apiUrl -Headers $hdrJson
@@ -327,10 +329,11 @@ try {
     $port = ($Listen -split ':')[-1]
     if (-not ($port -match '^\d+$')) { $port = "8080" }
     Write-Host ""
-    Write-Host "Starten: $ExePath serve --config `"$ConfigPath`""
+    Write-Host "Starten: & `"$ExePath`" serve --config `"$ConfigPath`""
     Write-Host "Web-UI:  ${proto}://localhost:${port}"
 } finally {
     if (Test-Path $TempDir) {
         Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+} @args
