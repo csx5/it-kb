@@ -90,7 +90,11 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] Markdown- & Export-ZIP-Import (`POST /api/import/markdown`) inkl. automatischem Medien-/Kategorie-/Synonym-Import
   - [x] Eigene Artikel-Vorlagen / Textbausteine (`article_templates`, `/api/templates`, Verwaltungs-Tab & Editor-Auswahl)
   - [x] GitHub Actions CI (`ci.yml`) & automatischer Multi-Plattform-Release-Workflow (`release.yml`)
-  - [x] Einfache Installation & Abhängigkeitsprüfung: `install.sh` (Linux/macOS, Release inkl. SHA-256 oder Source-Build inkl. Paketmanager-/Go-Auto-Setup & `systemd`) und `install.ps1` (Windows inkl. nativem Dienst & Firewall-Option)
+
+- [x] **Release `v1.1.1` – Installer, PowerShell-5.1-Fix & CI-Stabilisierung:**
+  - [x] Einfache Installation & Abhängigkeitsprüfung: [install.sh](install.sh) (Linux/macOS, Release inkl. SHA-256 oder Source-Build inkl. Paketmanager-/Go-Auto-Setup & `systemd`) und [install.ps1](install.ps1) (Windows inkl. nativem Dienst & Firewall-Option)
+  - [x] PowerShell-5.1-Kompatibilität für `irm ... | iex` in `install.ps1` (`& { ... } @args`, `return` statt `exit 0`, geklammerte `Test-Path`-Ausdrücke) sowie Private-Repo-Auth-Fallback (`gh` / `GITHUB_TOKEN`)
+  - [x] `SHA256SUMS.txt`-Pfad im Release-Workflow vereinheitlicht und CI-Workflow-Test (`CGO_ENABLED=1 go test -race ./...` + `bash -n install.sh`) behoben
 
 ### Später vorgemerkt (Open-Source / GitHub-Politur)
 - [ ] Screenshots / Vorschau-Ansichten in `README.md`
