@@ -96,5 +96,9 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] PowerShell-5.1-Kompatibilität für `irm ... | iex` in `install.ps1` (`& { ... } @args`, `return` statt `exit 0`, geklammerte `Test-Path`-Ausdrücke) sowie Private-Repo-Auth-Fallback (`gh` / `GITHUB_TOKEN`)
   - [x] `SHA256SUMS.txt`-Pfad im Release-Workflow vereinheitlicht und CI-Workflow-Test (`CGO_ENABLED=1 go test -race ./...` + `bash -n install.sh`) behoben
 
+- [x] **Release `v1.1.2` – `install.ps1` ohne UTF-8-BOM für PowerShell 5.1:**
+  - [x] UTF-8-BOM (`0xEF 0xBB 0xBF`) aus `install.ps1` entfernt und Ausgaben auf reines ASCII umgestellt (`irm ... | iex` Parser-Fix unter Windows PowerShell 5.1)
+  - [x] CI um automatische BOM-/ASCII-Prüfung für `install.ps1` erweitert
+
 ### Später vorgemerkt (Open-Source / GitHub-Politur)
 - [ ] Screenshots / Vorschau-Ansichten in `README.md`

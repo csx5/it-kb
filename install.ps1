@@ -1,4 +1,4 @@
-﻿& {
+& {
 [CmdletBinding()]
 param(
     [switch]$FromSource,
@@ -58,14 +58,14 @@ function Test-GoOk($Info) {
 
 function Install-MissingDependency([string]$ToolName, [string]$WingetId, [string]$ChocoPkg) {
     if (-not (Confirm-Action "$ToolName fehlt oder ist veraltet. Automatisch installieren?")) {
-        throw "Abhängigkeit '$ToolName' wird benötigt."
+        throw "Abhaengigkeit '$ToolName' wird benoetigt."
     }
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Info "Installiere $ToolName über winget ($WingetId) ..."
+        Write-Info "Installiere $ToolName ueber winget ($WingetId) ..."
         & winget install --id $WingetId --exact --accept-source-agreements --accept-package-agreements
         if ($LASTEXITCODE -ne 0) { throw "winget Installation von $ToolName fehlgeschlagen." }
     } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
-        Write-Info "Installiere $ToolName über Chocolatey ($ChocoPkg) ..."
+        Write-Info "Installiere $ToolName ueber Chocolatey ($ChocoPkg) ..."
         & choco install $ChocoPkg -y
         if ($LASTEXITCODE -ne 0) { throw "Chocolatey Installation von $ToolName fehlgeschlagen." }
     } else {
@@ -100,7 +100,7 @@ if ($Uninstall) {
     }
     $svc = Get-Service -Name "it-kb" -ErrorAction SilentlyContinue
     if ($svc) {
-        if (-not (Test-IsAdmin)) { throw "Zum Entfernen des Windows-Dienstes werden Administratorrechte benötigt." }
+        if (-not (Test-IsAdmin)) { throw "Zum Entfernen des Windows-Dienstes werden Administratorrechte benoetigt." }
         if ($svc.Status -ne "Stopped") {
             Stop-Service -Name "it-kb" -Force
         }
@@ -115,23 +115,23 @@ if ($Uninstall) {
         Remove-Item -Path $ExePath -Force
         Write-Ok "Binary entfernt: $ExePath"
     }
-    Write-Info "Datenverzeichnis ($DataDir) und Konfiguration ($ConfigPath) blieben unverändert."
+    Write-Info "Datenverzeichnis ($DataDir) und Konfiguration ($ConfigPath) blieben unveraendert."
     return
 }
 
-$arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { throw "Nur 64-Bit-Windows wird unterstützt." }
+$arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { throw "Nur 64-Bit-Windows wird unterstuetzt." }
 
 if ($CheckOnly) {
     Write-Info "System: Windows/${arch} | Zielverzeichnis: $InstallDir"
     $goInfo = Get-GoVersionInfo
-    if (Test-GoOk $goInfo) { Write-Ok "Go: $($goInfo.Text)" } else { Write-Warn "Go >= 1.$MinGoMinor nicht installiert (für -FromSource benötigt)." }
-    if (Get-Command git -ErrorAction SilentlyContinue) { Write-Ok "git gefunden" } else { Write-Warn "git nicht installiert (nur für Remote--FromSource benötigt)." }
+    if (Test-GoOk $goInfo) { Write-Ok "Go: $($goInfo.Text)" } else { Write-Warn "Go >= 1.$MinGoMinor nicht installiert (fuer -FromSource benoetigt)." }
+    if (Get-Command git -ErrorAction SilentlyContinue) { Write-Ok "git gefunden" } else { Write-Warn "git nicht installiert (nur fuer Remote--FromSource benoetigt)." }
     if (Get-Command winget -ErrorAction SilentlyContinue) { Write-Ok "Paketmanager: winget" } elseif (Get-Command choco -ErrorAction SilentlyContinue) { Write-Ok "Paketmanager: choco" } else { Write-Warn "Kein Paketmanager (winget/choco) gefunden" }
     return
 }
 
 if ($Service -and -not (Test-IsAdmin)) {
-    throw "Für -Service sind Administratorrechte erforderlich (PowerShell als Administrator starten)."
+    throw "Fuer -Service sind Administratorrechte erforderlich (PowerShell als Administrator starten)."
 }
 
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("itkb-install-" + [Guid]::NewGuid().ToString("N"))
@@ -146,10 +146,10 @@ try {
             Install-MissingDependency "Go (>= 1.$MinGoMinor)" "GoLang.Go" "golang"
             $goInfo = Get-GoVersionInfo
             if (-not (Test-GoOk $goInfo)) {
-                throw "Go >= 1.$MinGoMinor wurde nach der Installation nicht gefunden. PowerShell ggf. neu öffnen."
+                throw "Go >= 1.$MinGoMinor wurde nach der Installation nicht gefunden. PowerShell ggf. neu oeffnen."
             }
         }
-        Write-Ok "Go geprüft: $($goInfo.Text)"
+        Write-Ok "Go geprueft: $($goInfo.Text)"
 
         $SrcDir = $LocalRepoDir
         if (-not $InLocalRepo) {
@@ -212,7 +212,7 @@ try {
             $token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $env:GH_TOKEN }
             $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
             if ($ghCmd) {
-                Write-Info "Öffentlicher Download nicht verfügbar - verwende GitHub CLI (gh) ..."
+                Write-Info "Oeffentlicher Download nicht verfuegbar - verwende GitHub CLI (gh) ..."
                 if ($Version -eq "latest") {
                     & $ghCmd.Source release download --repo $Repo --pattern $AssetName --pattern "SHA256SUMS.txt" --dir $TempDir --clobber
                 } else {
@@ -221,13 +221,13 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw "Release-Download via gh fehlgeschlagen." }
                 Move-Item -Path (Join-Path $TempDir $AssetName) -Destination $BuiltExe -Force
             } elseif ($token) {
-                Write-Info "Öffentlicher Download nicht verfügbar - verwende GITHUB_TOKEN ..."
+                Write-Info "Oeffentlicher Download nicht verfuegbar - verwende GITHUB_TOKEN ..."
                 $apiUrl = if ($Version -eq "latest") { "https://api.github.com/repos/$Repo/releases/latest" } else { "https://api.github.com/repos/$Repo/releases/tags/$Version" }
                 $hdrJson = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github+json" }
                 $rel = Invoke-RestMethod -Uri $apiUrl -Headers $hdrJson
                 $binAsset = $rel.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
                 $sumAsset = $rel.assets | Where-Object { $_.name -eq "SHA256SUMS.txt" } | Select-Object -First 1
-                if (-not $binAsset -or -not $sumAsset) { throw "Release-Assets nicht über GitHub API gefunden." }
+                if (-not $binAsset -or -not $sumAsset) { throw "Release-Assets nicht ueber GitHub API gefunden." }
                 $hdrBin = @{ Authorization = "Bearer $token"; Accept = "application/octet-stream" }
                 Invoke-WebRequest -Uri $binAsset.url -Headers $hdrBin -OutFile $BuiltExe -UseBasicParsing
                 Invoke-WebRequest -Uri $sumAsset.url -Headers $hdrBin -OutFile $SumsFile -UseBasicParsing
@@ -248,13 +248,13 @@ try {
             }
         }
         if (-not $ExpectedHash) {
-            throw "Kein SHA-256-Eintrag für '$AssetName' in SHA256SUMS.txt gefunden."
+            throw "Kein SHA-256-Eintrag fuer '$AssetName' in SHA256SUMS.txt gefunden."
         }
         $ActualHash = (Get-FileHash -Path $BuiltExe -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($ActualHash -ne $ExpectedHash) {
-            throw "SHA-256-Prüfung fehlgeschlagen! Erwartet: $ExpectedHash, erhalten: $ActualHash"
+            throw "SHA-256-Pruefung fehlgeschlagen! Erwartet: $ExpectedHash, erhalten: $ActualHash"
         }
-        Write-Ok "SHA-256-Prüfsumme verifiziert ($ActualHash)"
+        Write-Ok "SHA-256-Pruefsumme verifiziert ($ActualHash)"
     }
 
     $WasRunning = $false
@@ -262,7 +262,7 @@ try {
     if ($existingSvc -and $existingSvc.Status -eq "Running") {
         if (-not (Test-IsAdmin)) { throw "Laufender Dienst 'it-kb' kann nur mit Administratorrechten aktualisiert werden." }
         $WasRunning = $true
-        Write-Info "Stoppe laufenden Dienst 'it-kb' für Update ..."
+        Write-Info "Stoppe laufenden Dienst 'it-kb' fuer Update ..."
         Stop-Service -Name "it-kb" -Force
     }
 
@@ -272,7 +272,7 @@ try {
     Write-Ok "Binary installiert: $ExePath"
 
     if (Test-Path $ConfigPath) {
-        Write-Info "Bestehende Konfiguration bleibt unverändert: $ConfigPath"
+        Write-Info "Bestehende Konfiguration bleibt unveraendert: $ConfigPath"
     } else {
         $cfgObj = [ordered]@{
             listen                     = $Listen
@@ -313,13 +313,13 @@ try {
     }
 
     if ($OpenFirewall) {
-        if (-not (Test-IsAdmin)) { throw "Für -OpenFirewall sind Administratorrechte erforderlich." }
+        if (-not (Test-IsAdmin)) { throw "Fuer -OpenFirewall sind Administratorrechte erforderlich." }
         $port = ($Listen -split ':')[-1]
         if (-not ($port -match '^\d+$')) { $port = "8080" }
         $ruleName = "IT-Wissensdatenbank (it-kb)"
         if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
             New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort ([int]$port) -Action Allow -Profile Domain,Private | Out-Null
-            Write-Ok "Firewall-Regel für Port $port (Domain/Private) erstellt"
+            Write-Ok "Firewall-Regel fuer Port $port (Domain/Private) erstellt"
         }
     }
 
