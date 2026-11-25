@@ -15,7 +15,42 @@ Eigenständige, 100 % lokale Wissensdatenbank für IT-Teams als einzelnes Go-Bin
 - **IT-Support-Alltag:** „Hat geholfen“-Zähler, angepinnte Dauerbrenner, Praxis-Kommentare unter Artikeln, algorithmisch ermittelte „Ähnliche Artikel“ und saubere Druck-/PDF-Ansicht (`@media print`).
 - **Kein Vendor-Lock-in & Auto-Backup:** Portabler Markdown-Export (ZIP) **und** Markdown-/ZIP-Import inkl. Medien, konsistentes SQLite-Voll-Backup (`VACUUM INTO`) sowie eingebaute zeitgesteuerte Backup-Rotation.
 
-## Schnellstart (Lokal)
+## Einfache Installation (Linux & Windows)
+
+### Linux / macOS (`install.sh`)
+
+```bash
+# Direktinstallation des aktuellen Releases inkl. Abhängigkeits- & SHA-256-Prüfung
+curl -fsSL https://raw.githubusercontent.com/csx5/lowi/main/install.sh | bash
+
+# Oder als systemd-Dienst systemweit mit automatischem LAN-HTTPS installieren:
+curl -fsSL https://raw.githubusercontent.com/csx5/lowi/main/install.sh | bash -s -- --system --service --tls-auto
+```
+
+Im geklonten Repository:
+
+```bash
+./install.sh --check-only      # Prüft System, Abhängigkeiten, Go (>= 1.24) und Port
+./install.sh                   # Baut und installiert lokal unter ~/.local/bin/it-kb
+./install.sh --system --service # Systemweite Installation mit systemd-Dienst
+./install.sh --uninstall       # Entfernt Binary/Dienst (Datenverzeichnis bleibt erhalten)
+```
+
+Fehlende Abhängigkeiten (`curl`, `git`, `sha256sum`, Go >= 1.24) erkennt `install.sh` automatisch und installiert sie auf Wunsch über `pacman`, `apt-get`, `dnf`, `zypper`, `apk`, `brew` oder als offizielle Go-Toolchain. Bei privaten Repositories nutzen beide Skripte automatisch `gh auth login`, `GITHUB_TOKEN` bzw. das lokale geklonte Repository.
+
+### Windows (`install.ps1`)
+
+```powershell
+# Benutzer-Installation aus dem aktuellen GitHub-Release inkl. SHA-256-Prüfung
+irm https://raw.githubusercontent.com/csx5/lowi/main/install.ps1 | iex
+
+# Im geklonten Repo als nativer Windows-Dienst + LAN-Firewall (PowerShell als Administrator):
+.\install.ps1 -FromSource -Service -OpenFirewall -TlsAuto
+```
+
+Optionen für `install.ps1`: `-FromSource`, `-Version <tag>`, `-InstallDir <pfad>`, `-Service`, `-OpenFirewall`, `-TlsAuto`, `-CheckOnly`, `-Yes`, `-Uninstall`.
+
+## Schnellstart (Manuell)
 
 ```bash
 make build

@@ -29,7 +29,7 @@ jobs:
       - name: Release-Binaries bauen
         run: |
           VERSION="${GITHUB_REF_NAME}" make build-linux build-windows
-          sha256sum dist/it-kb-* > dist/SHA256SUMS.txt
+          (cd dist && sha256sum it-kb-* > SHA256SUMS.txt)
 
       - name: GitHub Release veröffentlichen
         uses: softprops/action-gh-release@v2

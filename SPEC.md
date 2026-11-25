@@ -90,6 +90,7 @@ Dieses Dokument hält alle abgestimmten Design-Entscheidungen und den Umsetzungs
   - [x] Markdown- & Export-ZIP-Import (`POST /api/import/markdown`) inkl. automatischem Medien-/Kategorie-/Synonym-Import
   - [x] Eigene Artikel-Vorlagen / Textbausteine (`article_templates`, `/api/templates`, Verwaltungs-Tab & Editor-Auswahl)
   - [x] GitHub Actions CI (`ci.yml`) & automatischer Multi-Plattform-Release-Workflow (`release.yml`)
+  - [x] Einfache Installation & Abhängigkeitsprüfung: `install.sh` (Linux/macOS, Release inkl. SHA-256 oder Source-Build inkl. Paketmanager-/Go-Auto-Setup & `systemd`) und `install.ps1` (Windows inkl. nativem Dienst & Firewall-Option)
 
 ### Später vorgemerkt (Open-Source / GitHub-Politur)
 - [ ] Screenshots / Vorschau-Ansichten in `README.md`
